@@ -28,8 +28,8 @@ def dynamic_rcn(cell, inputs, **rnn_args):
     if not isinstance(cell, RCNCell):
         raise TypeError("cell must be an instance of RCNCell")
     rnn_args['time_major'] = False
-    N, T, H, W, C = tf.shape(inputs).to_list()
-    seq_input = tf.reshape(inputs, shape=(N, T, H * W * C))
+    isp = tf.shape(inputs)
+    seq_input = tf.reshape(inputs, shape=(isp[0], isp[1], isp[2] * isp[3] * isp[4]))
     return tf.nn.dynamic_rnn(cell, seq_input, **rnn_args)
 
 
@@ -43,9 +43,10 @@ class RCNCell(RNNCell):
         raise NotImplementedError("Abstract method")
 
     def __call__(self, inputs, state, scope=None):
-        N, T, _ = tf.shape(inputs)
+        isp = tf.shape(inputs)
         H, W, C = self.input_size
-        input2 = tf.reshape(inputs, shape=(N, T, H, W, C))
+        assert isp[2] == H * W * C
+        input2 = tf.reshape(inputs, shape=(isp[0], isp[1], H, W, C))
         return self.call(input2, state, scope)
 
     def call(self, inputs, state, scope=None):
@@ -62,7 +63,7 @@ class GruRcnCell(RCNCell):
     def __init__(self, input_size, nb_filter,
                  ih_filter_length, ih_strides, ih_pandding,
                  hh_filter_length,
-                 use_cudnn_on_gpu=None, data_format=None):
+                 data_format=None):
         """To be completed.
 
         """
@@ -72,7 +73,6 @@ class GruRcnCell(RCNCell):
         self._ih_strides = ih_strides
         self._ih_pandding = ih_pandding
         self._hh_filter_length = hh_filter_length
-        self._use_cudnn_on_gpu = use_cudnn_on_gpu
         self._data_format = data_format
 
         if data_format == 'NCHW':
@@ -128,7 +128,7 @@ class GruRcnCell(RCNCell):
                 w_r = self._conv(inputs, self._nb_filter, self._ih_filter_length,
                                  self._ih_strides, self._ih_pandding, scope="WrConv")
                 u_r = self._conv(state, self._nb_filter, self._hh_filter_length, [1, 1, 1, 1],
-                                 "SAMW", scope="UrConv")
+                                 "SAME", scope="UrConv")
                 r_bias = tf.get_variable(
                     name="r_biases",
                     initializer=tf.constant(1, shape=[self._nb_filter], dtype=tf.float32))
@@ -156,6 +156,5 @@ class GruRcnCell(RCNCell):
                 dtype=tf.float32, stddev=1e-1)
             kernel = tf.get_variable(initializer=init, name='weight')
             conv = tf.nn.conv2d(inputs, kernel, strides, padding,
-                                use_cudnn_on_gpu=self._use_cudnn_on_gpu,
                                 data_format=self._data_format)
         return conv
