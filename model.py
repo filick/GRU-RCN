@@ -1,5 +1,6 @@
 import functools
 import tensorflow as tf
+import numpy as np
 from rcn import dynamic_rcn, GruRcnCell
 
 
@@ -20,13 +21,16 @@ def lazy_property(function):
 
 class RcnVgg16:
 
-    def __init__(self, data, seq_length, target, train_mode, tranable=True):
+    def __init__(self, data, seq_length, target, train_mode, tranable=True, weight_path=None):
         self.data = data
         self.seq_length = seq_length
         self.target = target
         self.train_mode = train_mode
         self.trainable = tranable
-        self.data_dict = None
+        if weight_path is not None:
+            self.data_dict =  np.load(weight_path, encoding='latin1').item()
+        else:
+            self.data_dict = None
         self.var_dict = {}
 
 
@@ -73,20 +77,24 @@ class RcnVgg16:
         self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")  # 25088 = ((224 / (2 ** 5)) ** 2) * 512
         self.relu6 = tf.nn.relu(self.fc6)
         if self.train_mode is not None:
-            self.relu6 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
+            self.relu6 = tf.cond(self.train_mode, lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
         elif self.trainable:
             self.relu6 = tf.nn.dropout(self.relu6, 0.5)
 
         self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
         self.relu7 = tf.nn.relu(self.fc7)
         if self.train_mode is not None:
-            self.relu7 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu7, 0.5), lambda: self.relu7)
+            self.relu7 = tf.cond(self.train_mode, lambda: tf.nn.dropout(self.relu7, 0.5), lambda: self.relu7)
         elif self.trainable:
             self.relu7 = tf.nn.dropout(self.relu7, 0.5)
 
         self.fc8 = self.fc_layer(self.relu7, 4096, 1000, "fc8")
 
         self.prob = tf.nn.softmax(self.fc8, name="prob")
+
+        del self.data_dict
+
+        return self.prob
 
     @lazy_property
     def optimize(self):
