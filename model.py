@@ -51,8 +51,8 @@ class RcnVgg16:
         ])
 
         self.conv1_1 = self.conv_layer(bgr, 3, 64, "conv1_1")
-        # self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
-        self.conv1_2 = self.rcn_layer(self.conv1_1, 64, 64, "conv1_2")
+        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
+        # self.conv1_2 = self.rcn_layer(self.conv1_1, 64, 64, "conv1_2")
         self.pool1 = self.max_pool(self.conv1_2, 'pool1')
 
         self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1")
