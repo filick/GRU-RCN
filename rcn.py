@@ -18,7 +18,7 @@ def dynamic_rcn(cell, inputs, **rnn_args):
     Args:
         cell: An instance of RCNCell.
         inputs:
-            A `Tensor` of shape: `[batch_size, max_time, image_height,
+            A `Tensor` of shape: `[max_time, batch_size, image_height,
             image_width, chanel_size]`.
         other args:
             The same as `dynamic_rnn` function.

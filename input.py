@@ -34,6 +34,8 @@ class UCFVideo(FFMPEG_VideoReader):
 
         self.bufsize = bufsize
         self.pos = 1
+        self.width = self.size[0]
+        self.height = self.size[1]
 
     def get_length(self, frames=0, secondes=0):
         if frames != 0:
@@ -89,6 +91,7 @@ class VideoInput:
         self.files = []
         self.sep = [0]
         self.group = None
+        self.selected_classes = None
 
         for c in self.classes:
             sub_path = os.path.join(path, c)
@@ -98,7 +101,8 @@ class VideoInput:
 
     def grouping(self, train_rate, validation_rate, test_rate):
         self.group = {'train': [], 'validation': [], 'test':[]}
-        for i in range(len(self.classes)):
+        classes = self.selected_classes or range(len(self.classes))
+        for i in classes:
             files = list(range(self.sep[i], self.sep[i+1]))
             train_size = int(len(files) * train_rate)
             validation_size = int(len(files) * validation_rate)
@@ -117,7 +121,17 @@ class VideoInput:
 
         return (len(self.group['train']), len(self.group['validation']), len(self.group['test']))
 
-    def get_data(self, group, batch, seq_length=0, random_mode=False, frames=0, secondes=0):
+    def select_sub_collection(self, n_classes, log_file=None):
+        choices = np.random.choice(range(len(self.classes)), n_classes, False)
+        self.selected_classes = sorted(choices)
+        if log_file:
+            with open(log_file, 'w') as log:
+                for c in self.selected_classes:
+                    log.write("%i %s" % (c, self.classes[c]) + os.linesep)
+
+    def get_data(self, group, batch, seq_length=0,
+                 random_mode=False, frames=0, secondes=0,
+                 size=(VIDEO_HEIGHT, VIDEO_WIDTH)):
         '''Get a batch of video data.
 
         Parameters:
@@ -141,12 +155,15 @@ class VideoInput:
               the class label of each sample.
         '''
 
+        assert size[0] <= self.VIDEO_HEIGHT
+        assert size[1] <= self.VIDEO_WIDTH
+
         if random_mode:
             frames = np.random.randint(0, 2, batch)
             secondes = np.random.randint(1, 11, batch) / 10
         else:
             frames = [frames] * batch
-            secondes = [secondes] * batch 
+            secondes = [secondes] * batch
 
         selected_files = np.random.choice(self.group[group], batch, False)
         label = np.zeros(batch, dtype=np.uint8)
@@ -167,7 +184,8 @@ class VideoInput:
         if seq_length == 0 or max_video_length < seq_length:
             seq_length = max_video_length
 
-        data = np.zeros(shape=(seq_length, batch, self.VIDEO_HEIGHT, self.VIDEO_WIDTH, 3), dtype=np.uint8)
+        h, w = size
+        data = np.zeros(shape=(seq_length, batch, h, w, 3), dtype=np.uint8)
         for i in range(batch):
             video_file = selected_files[i]
             video_class = label[i]
@@ -175,7 +193,9 @@ class VideoInput:
 
             ucf = UCFVideo(file_path)
             video_data, length = ucf.read_frames(seq_length, frames[i], secondes[i])
-            data[0:length, i, :] = video_data
+            h_start = int((ucf.height - h) / 2)
+            w_start = int((ucf.width - w) / 2)
+            data[0:length, i, :] = video_data[:, h_start:(h_start + h), w_start:(w_start + w)]
             videos_length[i] = length
             del ucf
 
