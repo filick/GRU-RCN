@@ -167,7 +167,7 @@ class VideoInput:
         if seq_length == 0 or max_video_length < seq_length:
             seq_length = max_video_length
 
-        data = np.zeros(shape=(batch, seq_length, self.VIDEO_HEIGHT, self.VIDEO_WIDTH, 3), dtype=np.uint8)
+        data = np.zeros(shape=(seq_length, batch, self.VIDEO_HEIGHT, self.VIDEO_WIDTH, 3), dtype=np.uint8)
         for i in range(batch):
             video_file = selected_files[i]
             video_class = label[i]
@@ -175,7 +175,7 @@ class VideoInput:
 
             ucf = UCFVideo(file_path)
             video_data, length = ucf.read_frames(seq_length, frames[i], secondes[i])
-            data[i, 0:length, :] = video_data
+            data[0:length, i, :] = video_data
             videos_length[i] = length
             del ucf
 
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     total = np.array(sorted(total))
     check = total - np.arange(0, video_input.sep[-1])
     print((check != 0).sum())
-    
+
     data, seq_len, label = video_input.get_data("train", 100, random_mode=True, seq_length=30)
     print(seq_len, label)
     import matplotlib.pyplot as plt

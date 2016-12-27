@@ -43,12 +43,12 @@ class RcnVgg16:
         """
 
         # Convert RGB to BGR
-        red, green, blue = tf.unpack(self.data, 4)
-        bgr = tf.concat(4, [
+        red, green, blue = tf.unpack(self.data, axis=4)
+        bgr = tf.pack([
             blue - VGG_MEAN[0],
             green - VGG_MEAN[1],
             red - VGG_MEAN[2],
-        ])
+        ], 4)
 
         self.conv1_1 = self.conv_layer(bgr, 3, 64, "conv1_1")
         self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
@@ -71,9 +71,13 @@ class RcnVgg16:
 
         self.conv5_1 = self.conv_layer(self.pool4, 512, 512, "conv5_1")
         self.conv5_2 = self.conv_layer(self.conv5_1, 512, 512, "conv5_2")
-        self.conv5_3 = self.conv_layer(self.conv5_2, 512, 512, "conv5_3")
+        # self.conv5_3 = self.conv_layer(self.conv5_2, 512, 512, "conv5_3")
+        self.conv5_3 = self.rcn_layer(self.conv5_2, 512, 512, "conv5_3")
         self.pool5 = self.max_pool(self.conv5_3, 'pool5')
 
+        return self.pool5
+
+        '''
         self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")  # 25088 = ((224 / (2 ** 5)) ** 2) * 512
         self.relu6 = tf.nn.relu(self.fc6)
         if self.train_mode is not None:
@@ -95,6 +99,7 @@ class RcnVgg16:
         del self.data_dict
 
         return self.prob
+        '''
 
     @lazy_property
     def optimize(self):
@@ -110,40 +115,32 @@ class RcnVgg16:
 
     def max_pool(self, bottom, name):
         with tf.variable_scope(name):
-            isp = tf.shape(bottom)
 
-            def _inner_max_pool(step):
-                return tf.nn.max_pool(bottom[:, step, :],
+            def _inner_max_pool(bott):
+                return tf.nn.max_pool(bott,
                                       ksize=[1, 2, 2, 1],
                                       strides=[1, 2, 2, 1],
                                       padding='SAME',
                                       name=name)
 
-            _, tensors = tf.while_loop(
-                lambda i, tensors: tf.less(i, isp[1]),
-                lambda i, tensors: (i+1, tensors.append(_inner_max_pool(i))),
-                (tf.constant(0), [])
-            )
-            output = tf.pack(tensors, 1)
+            bottoms = tf.unpack(bottom, axis=0)
+            output = tf.pack([_inner_max_pool(bott) for bott in bottoms], axis=0)
+
             return output
 
     def conv_layer(self, bottom, in_channels, out_channels, name):
         with tf.variable_scope(name):
-            isp = tf.shape(bottom)
             filt, conv_biases = self.get_conv_var(3, in_channels, out_channels, name)
 
-            def _inner_conv(step):
-                conv = tf.nn.conv2d(bottom[:, step, :], filt, [1, 1, 1, 1], padding='SAME')
+            def _inner_conv(bott):
+                conv = tf.nn.conv2d(bott, filt, [1, 1, 1, 1], padding='SAME')
                 bias = tf.nn.bias_add(conv, conv_biases)
                 relu = tf.nn.relu(bias)
                 return relu
 
-            _, tensors = tf.while_loop(
-                lambda i, tensors: tf.less(i, isp[1]),
-                lambda i, tensors: (i+1, tensors.append(_inner_conv(i))),
-                (tf.constant(0), [])
-            )
-            output = tf.pack(tensors, 1)
+            bottoms = tf.unpack(bottom, axis=0)
+            output = tf.pack([_inner_conv(bott) for bott in bottoms], axis=0)
+
             return output
 
     def rcn_layer(self, bottom, in_channels, out_channels, name):
@@ -152,7 +149,7 @@ class RcnVgg16:
             input_size = (N, H, C)
             nb_filter = out_channels
             cell = GruRcnCell(input_size, nb_filter, 3, [1, 1, 1, 1], "SAME", 3)
-            output, _ = dynamic_rcn(cell, self.data)
+            output, _ = dynamic_rcn(cell, bottom, sequence_length=self.seq_length, dtype=tf.float32)
             return output
 
     def fc_layer(self, bottom, in_size, out_size, name):
@@ -199,3 +196,9 @@ class RcnVgg16:
         assert var.get_shape() == initial_value.get_shape()
 
         return var
+
+    def get_var_count(self):
+        count = 0
+        for v in self.var_dict.values():
+            count += functools.reduce(lambda x, y: x * y, v.get_shape().as_list())
+        return count
