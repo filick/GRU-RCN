@@ -48,7 +48,7 @@ with tf.Session() as sess:
             valid_accuracy = accuracy.eval(feed_dict={video_data: valid, seq_len:valid_seq, label: valid_y, train_mode: False})
             print("step %d, validation accuracy %g"%(i, valid_accuracy))
 
-            saver.save(sess, "backup/model.ckpt")
+            saver.save(sess, "backup/small_model.ckpt")
             print("saved!")
 
         train_step.run(feed_dict={video_data: data_batch, seq_len:seq_batch, label: y_batch, train_mode: True})
