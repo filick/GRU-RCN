@@ -65,6 +65,7 @@ class GruRcnCell(RCNCell):
     def __init__(self, input_size, nb_filter,
                  ih_filter_length, ih_strides, ih_pandding,
                  hh_filter_length,
+                 weight_initializers=None,
                  data_format=None):
         """To be completed.
 
@@ -75,6 +76,7 @@ class GruRcnCell(RCNCell):
         self._ih_strides = ih_strides
         self._ih_pandding = ih_pandding
         self._hh_filter_length = hh_filter_length
+        self.weight_initializers=weight_initializers
         self._data_format = data_format
 
         if data_format == 'NCHW':
@@ -118,45 +120,66 @@ class GruRcnCell(RCNCell):
         with vs.variable_scope(scope or type(self).__name__):  # "GruRcnCell"
             with vs.variable_scope("Gates"):  # Reset gate and update gate.
                 # We start with bias of 1.0.
+                init = self._get_initializer("WzConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 w_z = self._conv(inputs, self._nb_filter, self._ih_filter_length,
-                                 self._ih_strides, self._ih_pandding, scope="WzConv")
+                                 self._ih_strides, self._ih_pandding, init, scope="WzConv")
+
+                init = self._get_initializer("UzConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 u_z = self._conv(state, self._nb_filter, self._hh_filter_length, [1, 1, 1, 1],
-                                 "SAME", scope="UzConv")
+                                 "SAME", init, scope="UzConv")
+
+                init = self._get_initializer("z_biases", init_ops.ones_initializer())
                 z_bias = tf.get_variable(
                     name="z_biases",
                     shape=[self._nb_filter],
-                    initializer=init_ops.ones_initializer())
-                z_gate = math_ops.sigmoid(w_z + u_z + z_bias)
+                    initializer=init
+                )
+                z_gate = math_ops.sigmoid(tf.nn.bias_add(w_z + u_z, z_bias))
+
+                init = self._get_initializer("WrConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 w_r = self._conv(inputs, self._nb_filter, self._ih_filter_length,
-                                 self._ih_strides, self._ih_pandding, scope="WrConv")
+                                 self._ih_strides, self._ih_pandding, init, scope="WrConv")
+
+                init = self._get_initializer("UrConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 u_r = self._conv(state, self._nb_filter, self._hh_filter_length, [1, 1, 1, 1],
-                                 "SAME", scope="UrConv")
+                                 "SAME", init, scope="UrConv")
+
+                init = self._get_initializer("r_biases", init_ops.ones_initializer())
                 r_bias = tf.get_variable(
                     name="r_biases",
                     shape=[self._nb_filter],
                     initializer=init_ops.ones_initializer())
-                r_gate = math_ops.sigmoid(w_r + u_r + r_bias)
+                r_gate = math_ops.sigmoid(tf.nn.bias_add(w_r + u_r, r_bias))
+
             with vs.variable_scope("Candidate"):
+                init = self._get_initializer("WConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 w = self._conv(inputs, self._nb_filter, self._ih_filter_length,
-                               self._ih_strides, self._ih_pandding, scope="WConv")
+                               self._ih_strides, self._ih_pandding, init, scope="WConv")
+                init = self._get_initializer("UConv", init_ops.truncated_normal_initializer(stddev=0.01))
                 u = self._conv(r_gate * state, self._nb_filter, self._hh_filter_length,
-                               [1, 1, 1, 1], "SAME", scope="UConv")
+                               [1, 1, 1, 1], "SAME", init, scope="UConv")
+                init = self._get_initializer("c_biases", init_ops.ones_initializer())
                 c_bias = tf.get_variable(
                     name="c_biases",
                     shape=[self._nb_filter],
                     initializer=init_ops.ones_initializer())
-                c = math_ops.tanh(w + u +  c_bias)
+                c = math_ops.tanh(tf.nn.bias_add(w + u, c_bias))
             new_h = z_gate * state + (1 - z_gate) * c
         return new_h, new_h
 
+    def _get_initializer(self, name, default=None):
+        if self.weight_initializers is not None and name in self.weight_initializers:
+            init = self.weight_initializers[name]
+        else:
+            init = default
+        return init
 
-    def _conv(self, inputs, nb_filter, filter_length, strides, padding,
-              weight_initializer=None, scope=None):
+    def _conv(self, inputs, nb_filter, filter_length, strides,
+              padding, weight_initializer, scope=None):
         with tf.variable_scope(scope or 'Convolutional'):
             in_channels = inputs.get_shape().as_list()[-1]
-            init = weight_initializer or init_ops.truncated_normal_initializer(stddev=1e-1)
             kernel = tf.get_variable(
-                initializer=init,
+                initializer=weight_initializer,
                 shape=[filter_length, filter_length, in_channels, nb_filter],
                 name='weight')
             conv = tf.nn.conv2d(inputs, kernel, strides, padding,

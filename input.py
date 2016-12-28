@@ -124,10 +124,6 @@ class VideoInput:
     def select_sub_collection(self, n_classes, log_file=None):
         choices = np.random.choice(range(len(self.classes)), n_classes, False)
         self.selected_classes = sorted(choices)
-        if log_file:
-            with open(log_file, 'w') as log:
-                for c in self.selected_classes:
-                    log.write("%i %s" % (c, self.classes[c]) + os.linesep)
 
     def get_data(self, group, batch, seq_length=0,
                  random_mode=False, frames=0, secondes=0,
@@ -158,6 +154,12 @@ class VideoInput:
         assert size[0] <= self.VIDEO_HEIGHT
         assert size[1] <= self.VIDEO_WIDTH
 
+        if batch == "all":
+            selected_files = np.array(self.group[group], dtype=np.int32)
+            batch = len(self.group[group])
+        else:
+            selected_files = np.random.choice(self.group[group], batch, False)
+
         if random_mode:
             frames = np.random.randint(0, 2, batch)
             secondes = np.random.randint(1, 11, batch) / 10
@@ -165,7 +167,6 @@ class VideoInput:
             frames = [frames] * batch
             secondes = [secondes] * batch
 
-        selected_files = np.random.choice(self.group[group], batch, False)
         label = np.zeros(batch, dtype=np.uint8)
         for sep in self.sep[1:-1]:
             label[selected_files >= sep] += 1
@@ -181,7 +182,7 @@ class VideoInput:
             del ucf
 
         max_video_length = videos_length.max()
-        if seq_length == 0 or max_video_length < seq_length:
+        if seq_length == 0 :
             seq_length = max_video_length
 
         h, w = size
@@ -199,7 +200,25 @@ class VideoInput:
             videos_length[i] = length
             del ucf
 
-        return data, videos_length, label
+        if self.selected_classes is not None:
+            label = np.array(list(map(lambda l: np.where(self.selected_classes == l)[0][0] , label)))
+
+        return (data, videos_length, label)
+
+    def save(self, file_path):
+        if self.group == None:
+            return
+        with open(file_path, 'w') as log:
+            classes = self.selected_classes or range(len(self.classes))
+            log.write("%i" % (len(classes)) + os.linesep)
+            for c in classes:
+                log.write("%i %s" % (c, self.classes[c]) + os.linesep)
+            log.write("train:" + os.linesep)
+            log.write(" ".join(list(map(lambda i: str(i), self.group["train"]))) + os.linesep)
+            log.write("validation:" + os.linesep)
+            log.write(" ".join(list(map(lambda i: str(i), self.group["validation"]))) + os.linesep)
+            log.write("test:" + os.linesep)
+            log.write(" ".join(list(map(lambda i: str(i), self.group["test"]))) + os.linesep)
 
 '''
 if __name__ == "__main__":
