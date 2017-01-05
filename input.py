@@ -161,7 +161,7 @@ class VideoInput:
             selected_files = np.random.choice(self.group[group], batch, False)
 
         if random_mode:
-            frames = np.random.randint(0, 2, batch)
+            frames = [0] * batch
             secondes = np.random.randint(1, 11, batch) / 10
         else:
             frames = [frames] * batch
@@ -219,6 +219,25 @@ class VideoInput:
             log.write(" ".join(list(map(lambda i: str(i), self.group["validation"]))) + os.linesep)
             log.write("test:" + os.linesep)
             log.write(" ".join(list(map(lambda i: str(i), self.group["test"]))) + os.linesep)
+
+    def load(self, file_path):
+        with open(file_path, 'r') as log:
+            n_classes = int(log.readline())
+            if n_classes == 101:
+                self.selected_classes = None
+            else:
+                self.selected_classes = []
+            for i in range(n_classes):
+                line = log.readline()
+                if n_classes != 101:
+                    self.selected_classes.append(int(line.split(' ')[0]))
+            self.group = {}
+            log.readline()
+            self.group["train"] = list(map(lambda i: int(i), log.readline().split(' ')))
+            log.readline()
+            self.group["validation"] = list(map(lambda i: int(i), log.readline().split(' ')))
+            log.readline()
+            self.group["test"] = list(map(lambda i: int(i), log.readline().split(' ')))
 
 '''
 if __name__ == "__main__":

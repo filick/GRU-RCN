@@ -63,11 +63,11 @@ class RcnVgg16:
         self.rcn5_lastframe = self.last_frame_layer(self.rcn5, "rcn5_lastframe")
         self.pool5 = self.max_single_pool(self.rcn5_lastframe, 'pool5')
 
-        self.fc6 = self.fc_layer(self.pool5, 7*7*32, 128, "fc6")
+        self.fc6 = self.fc_layer(self.pool5, 7*7*32, 512, "fc6")
         self.relu6 = tf.nn.relu(self.fc6)
         self.relu6 = tf.cond(self.train_mode, lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
 
-        self.fc_7 = self.fc_layer(self.relu6, 128, 10, "fc_7")
+        self.fc_7 = self.fc_layer(self.relu6, 512, 101, "fc_7")
 
         self.prob = tf.nn.softmax(self.fc_7, name="prob")
 

@@ -3,20 +3,25 @@ from small_model import RcnVgg16
 from input import VideoInput
 import numpy as np
 
-SEQ_LEN = 5
-BATCH_SIZE = 50
+SEQ_LEN = 10
+BATCH_SIZE = 20
 
 video_input = VideoInput("/home/filick/workspace/VideoClassification/UCF-101")
-video_input.select_sub_collection(10)
-video_input.grouping(0.7, 0.15, 0.15)
-video_input.save("backup/data.txt")
-train_data = video_input.get_data("train", "all", SEQ_LEN, secondes=1, size=(224, 224))
-validation_data = video_input.get_data("validation", "all", SEQ_LEN, secondes=1, size=(224, 224))
+# video_input.select_sub_collection(10)
+# video_input.grouping(0.7, 0.15, 0.15)
+# video_input.save("backup/data2.txt")
+video_input.load("backup/data2.txt")
+print(video_input.selected_classes, len(video_input.group["train"]))
 
-def next_batch(dataset, batch=BATCH_SIZE):
-    data, seq, y = dataset
-    choices = np.random.choice(range(y.size), batch, False)
-    return data[:, choices, :], seq[choices], y[choices]
+def dataset(group, buffer, epos):
+    while True:
+        data, seq, y = video_input.get_data(group, buffer, SEQ_LEN, random_mode=True, size=(224, 224))
+        for i in range(int(epos * buffer / BATCH_SIZE)):
+            choices = np.random.choice(range(y.size), BATCH_SIZE, False)
+            yield data[:, choices, :], seq[choices], y[choices]
+
+train_data = dataset("train", 1000, 2)
+validation_data = dataset("validation", 100, 20)
 
 video_data = tf.placeholder(tf.float32, [SEQ_LEN, None, 224, 224, 3], name="input_data")
 seq_len = tf.placeholder(tf.int32, [None,], name="input_seqlen")
@@ -32,24 +37,23 @@ saver = tf.train.Saver()
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-    # predict = sess.run(rcn_vgg16.pool4, feed_dict={video_data: data, seq_len:seq, label: y, train_mode: True})
-    # print(predict.shape)
-    i = 0
-    while True:
-        train, train_seq, train_y = next_batch(train_data, BATCH_SIZE)
 
-        if i%10 == 0:
+    i = 0
+
+    while True:
+        train, train_seq, train_y = next(train_data)
+
+        if i%100 == 0:
             train_accuracy = accuracy.eval(feed_dict={video_data: train, seq_len:train_seq, label: train_y, train_mode: False})
             print("step %d, training accuracy %g"%(i, train_accuracy))
 
-            valid, valid_seq, valid_y = next_batch(validation_data, 50)
+            valid, valid_seq, valid_y = next(validation_data)
             valid_accuracy = accuracy.eval(feed_dict={video_data: valid, seq_len:valid_seq, label: valid_y, train_mode: False})
             print("step %d, validation accuracy %g"%(i, valid_accuracy))
 
-            saver.save(sess, "backup/small_model.ckpt")
+            saver.save(sess, "backup/small_model2.ckpt")
             print("saved!")
 
         train_step.run(feed_dict={video_data: train, seq_len:train_seq, label: train_y, train_mode: True})
 
         i = i + 1
-
