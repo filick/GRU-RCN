@@ -5,9 +5,9 @@ from numpy import *
 import cv2
 
 class VideoInput:
-    path=None          #根目录
-    dirnames=[]        #每个子文件夹的名称
-    filenames=[]       #每个文件的名称
+    path=None          #root index
+    dirnames=[]        #name of every file folder(Video type)
+    filenames=[]       #every video's name'
     sep=[]
     gro={}
     def __init__(self, path):
@@ -76,4 +76,4 @@ class VideoInput:
                 data[j][f]=dat
             j+=1
             cap.release()
-        return (data, flength, nogro)    #data是五维ndarry，第二维帧数，第三维宽，第四维高，第五维按BGR，flength是每个文件读取的帧数，nogro是每个文件属于哪个类
+        return (data, flength, nogro)    
