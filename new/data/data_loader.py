@@ -71,7 +71,7 @@ class DataLoader(object):
                     E.g. TTA_zoom = 10 if ten_crop, = 2 if flip, default value is 1 (5D).
     """
     
-    def __init__(self, root= '../../data/UCF-101/', videolist=None, batch_size=2, num_frames=3, 
+    def __init__(self, root= '../../data/UCF-101/', num_classes = 101, videolist=None, batch_size=2, num_frames=3, 
                  transforms=None,
                  shuffle=False, buffer_size=100, 
                  num_parallel_calls=8):
@@ -101,6 +101,10 @@ class DataLoader(object):
         self.buffer_size = buffer_size
         self.transforms = transforms
         self.num_parallel_calls = num_parallel_calls
+        
+        self.num_classes = num_classes
+        self.height = 240
+        self.width = 320
    
         # initial shuffling of the videos and labels 
         if self.shuffle:
@@ -114,9 +118,11 @@ class DataLoader(object):
         self.video_paths = convert_to_tensor(self.video_paths, dtype=dtypes.string)
         self.labels = convert_to_tensor(self.labels, dtype=dtypes.int32)
         
-        self.data = self.get_data()
+        self.data = self._get_data()
+
     
-    def get_data(self):
+    #@may use lazy_property to protect data
+    def _get_data(self):
         dataset = tf.data.Dataset.from_tensor_slices((self.video_paths, self.labels))  
         
         # pims do not support tensor string input, so use tf.py_func here
@@ -171,14 +177,16 @@ class DataLoader(object):
                 we will implement transforms for 4D Tensor based on tf ops.
         """
         
+        images_per_video.set_shape((self.num_frames, self.height, self.width, 3))
+
         if self.transforms is None:
             pass
         else:
             """Call whatever transform functions here"""
-            IMAGENET_MEAN = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)    
+            #IMAGENET_MEAN = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)    
 
-            imgs_resized = tf.image.resize_images(images_per_video, [224, 224])
-            images_per_video = tf.subtract(imgs_resized, IMAGENET_MEAN)
+            images_per_video = tf.image.resize_images(images_per_video, [224, 224])
+            #images_per_video = tf.subtract(imgs_resized, IMAGENET_MEAN)
         
         return images_per_video, label
     
@@ -193,7 +201,10 @@ if __name__ == "__main__":
     trainlist, testlist = split_obj.readlist()
     
     with tf.device('/cpu:0'):
-        tr_data = DataLoader(videolist = trainlist, batch_size = 2, num_frames = 3, shuffle = True)
+        tr_data = DataLoader(videolist = trainlist, num_classes = 101, 
+                             batch_size = 2, num_frames = 3, 
+                             transforms='resize', 
+                             shuffle = True)
         
         iterator = tf.data.Iterator.from_structure(tr_data.data.output_types,
                                        tr_data.data.output_shapes)
@@ -215,13 +226,10 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
     def imshow(inp, title=None):
-        #inp = inp.numpy().transpose((1, 2, 0))
-        #inp = np.clip(inp, 0, 1)
+        inp = np.asarray(inp, dtype='uint8')
         plt.figure()
         plt.imshow(inp)
-    
-    # Make a grid from batch
-    
+        
     imshow(img_batch[0,0,:,:,:])
     imshow(img_batch[0,1,:,:,:])
     imshow(img_batch[0,2,:,:,:])
