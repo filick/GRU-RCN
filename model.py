@@ -43,8 +43,8 @@ class RcnVgg16:
         """
 
         # Convert RGB to BGR
-        red, green, blue = tf.unpack(self.data, axis=4)
-        bgr = tf.pack([
+        red, green, blue = tf.unstack(self.data, axis=4)
+        bgr = tf.stack([
             blue - VGG_MEAN[0],
             green - VGG_MEAN[1],
             red - VGG_MEAN[2],
@@ -97,7 +97,7 @@ class RcnVgg16:
     @lazy_property
     def error(self):
         number = tf.range(0, tf.shape(self.seq_length)[0])
-        indexs = tf.pack([number, self.target], axis=1)
+        indexs = tf.stack([number, self.target], axis=1)
         self.cross_entropy = -tf.reduce_sum(tf.log(tf.gather_nd(self.prediction, indexs)))
         return self.cross_entropy
 
@@ -108,7 +108,7 @@ class RcnVgg16:
 
     def last_frame_layer(self, bottom, name):
         number = tf.range(0, tf.shape(self.seq_length)[0])
-        indexs = tf.pack([self.seq_length - 1, number], axis=1)
+        indexs = tf.stack([self.seq_length - 1, number], axis=1)
         return tf.gather_nd(bottom, indexs, name)
 
     def max_pool(self, bottom, name):
@@ -120,8 +120,8 @@ class RcnVgg16:
                                       padding='SAME',
                                       name=name)
 
-            bottoms = tf.unpack(bottom, axis=0)
-            output = tf.pack([_inner_max_pool(bott) for bott in bottoms], axis=0)
+            bottoms = tf.unstack(bottom, axis=0)
+            output = tf.stack([_inner_max_pool(bott) for bott in bottoms], axis=0)
 
             return output
 
@@ -138,8 +138,8 @@ class RcnVgg16:
                 relu = tf.nn.relu(bias)
                 return relu
 
-            bottoms = tf.unpack(bottom, axis=0)
-            output = tf.pack([_inner_conv(bott) for bott in bottoms], axis=0)
+            bottoms = tf.unstack(bottom, axis=0)
+            output = tf.stack([_inner_conv(bott) for bott in bottoms], axis=0)
 
             return output
 
