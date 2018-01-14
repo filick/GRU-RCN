@@ -9,6 +9,7 @@ def _list_delete(a, b):
 
 class UCFVideo(FFMPEG_VideoReader):
 
+    '''
     def __init__(self, filename, print_infos=False, bufsize=None,
                  pix_fmt="rgb24", check_duration=True):
 
@@ -36,6 +37,7 @@ class UCFVideo(FFMPEG_VideoReader):
         self.pos = 1
         self.width = self.size[0]
         self.height = self.size[1]
+    '''
 
     def get_length(self, frames=0, secondes=0):
         if frames != 0:
@@ -194,8 +196,9 @@ class VideoInput:
 
             ucf = UCFVideo(file_path)
             video_data, length = ucf.read_frames(seq_length, frames[i], secondes[i])
-            h_start = int((ucf.height - h) / 2)
-            w_start = int((ucf.width - w) / 2)
+            width, height = ucf.size
+            h_start = int((height - h) / 2)
+            w_start = int((width - w) / 2)
             data[0:length, i, :] = video_data[:, h_start:(h_start + h), w_start:(w_start + w)]
             videos_length[i] = length
             del ucf

@@ -22,12 +22,15 @@ def lazy_property(function):
 
 class RcnVgg16:
 
-    def __init__(self, data, seq_length, target, train_mode):
+    def __init__(self, data, seq_length, target, train_mode, weight_path=None):
         self.data = data
         self.seq_length = seq_length
         self.target = target
         self.train_mode = train_mode
-        self.data_dict = None
+        if weight_path is not None:
+            self.data_dict = np.load(weight_path, encoding='latin1').item()
+        else:
+            self.data_dict = None
         self.var_dict = {}
 
 
@@ -40,36 +43,53 @@ class RcnVgg16:
         """
 
         # Convert RGB to BGR
-        red, green, blue = tf.unpack(self.data, axis=4)
-        bgr = tf.pack([
+        red, green, blue = tf.unstack(self.data, axis=4)
+        bgr = tf.stack([
             blue - VGG_MEAN[0],
             green - VGG_MEAN[1],
             red - VGG_MEAN[2],
         ], 4)
 
-        self.conv1 = self.conv_layer(bgr, 3, 8, "conv1")
-        self.pool1 = self.max_pool(self.conv1, 'pool1')
+        self.conv1_1 = self.conv_layer(bgr, 3, 64, "conv1_1")
+        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
+        self.pool1 = self.max_pool(self.conv1_2, 'pool1')
 
-        self.conv2 = self.conv_layer(self.pool1, 8, 16, "conv2")
-        self.pool2 = self.max_pool(self.conv2, 'pool2')
+        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1")
+        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "conv2_2")
+        self.pool2 = self.max_pool(self.conv2_2, 'pool2')
 
-        self.conv3 = self.conv_layer(self.pool2, 16, 32, "conv3")
-        self.pool3 = self.max_pool(self.conv3, 'pool3')
+        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "conv3_1")
+        # self.rcn3 = self.rcn_layer(self.pool2, 128, 256, "rcn3_1")
+        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "conv3_2")
+        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "conv3_3")
+        self.pool3 = self.max_pool(self.conv3_3, 'pool3')
 
-        self.rcn4 = self.rcn_layer(self.pool3, 32, 32, "rcn4")
-        self.pool4 = self.max_pool(self.rcn4, 'pool4')
+        # self.conv4_1 = self.conv_layer(self.pool3, 256, 512, "conv4_1")
+        self.rcn4 = self.rcn_layer(self.pool3, 256, 512, "rcn4_1")
+        self.conv4_2 = self.conv_layer(self.rcn4, 512, 512, "conv4_2")
+        self.conv4_3 = self.conv_layer(self.conv4_2, 512, 512, "conv4_3")
+        self.pool4 = self.max_pool(self.conv4_3, 'pool4')
 
-        self.rcn5 = self.rcn_layer(self.pool4, 32, 32, "rcn5")
+        # self.conv5_1 = self.conv_layer(self.pool4, 512, 512, "conv5_1")
+        self.rcn5 = self.rcn_layer(self.pool4, 512, 512, "rcn5_1")
         self.rcn5_lastframe = self.last_frame_layer(self.rcn5, "rcn5_lastframe")
-        self.pool5 = self.max_single_pool(self.rcn5_lastframe, 'pool5')
+        self.conv5_2 = self.conv_single_layer(self.rcn5_lastframe, 512, 512, "conv5_2")
+        self.conv5_3 = self.conv_single_layer(self.conv5_2, 512, 512, "conv5_3")
+        self.pool5 = self.max_single_pool(self.conv5_3, 'pool5')
 
-        self.fc6 = self.fc_layer(self.pool5, 7*7*32, 512, "fc6")
+        self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")  # 25088 = ((224 / (2 ** 5)) ** 2) * 512
         self.relu6 = tf.nn.relu(self.fc6)
         self.relu6 = tf.cond(self.train_mode, lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
 
-        self.fc_7 = self.fc_layer(self.relu6, 512, 101, "fc_7")
+        # self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
+        # self.relu7 = tf.nn.relu(self.fc7)
+        # self.relu7 = tf.cond(self.train_mode, lambda: tf.nn.dropout(self.relu7, 0.5), lambda: self.relu7)
 
-        self.prob = tf.nn.softmax(self.fc_7, name="prob")
+        # self.fc8 = self.fc_layer(self.relu7, 4096, 1000, "fc8")
+
+        self.fc_end = self.fc_layer(self.relu6, 4096, 10, "fc_end")
+
+        self.prob = tf.nn.softmax(self.fc_end, name="prob")
 
         del self.data_dict
         return self.prob
@@ -77,7 +97,7 @@ class RcnVgg16:
     @lazy_property
     def error(self):
         number = tf.range(0, tf.shape(self.seq_length)[0])
-        indexs = tf.pack([number, self.target], axis=1)
+        indexs = tf.stack([number, self.target], axis=1)
         self.cross_entropy = -tf.reduce_sum(tf.log(tf.gather_nd(self.prediction, indexs)))
         return self.cross_entropy
 
@@ -88,7 +108,7 @@ class RcnVgg16:
 
     def last_frame_layer(self, bottom, name):
         number = tf.range(0, tf.shape(self.seq_length)[0])
-        indexs = tf.pack([self.seq_length - 1, number], axis=1)
+        indexs = tf.stack([self.seq_length - 1, number], axis=1)
         return tf.gather_nd(bottom, indexs, name)
 
     def max_pool(self, bottom, name):
@@ -100,8 +120,8 @@ class RcnVgg16:
                                       padding='SAME',
                                       name=name)
 
-            bottoms = tf.unpack(bottom, axis=0)
-            output = tf.pack([_inner_max_pool(bott) for bott in bottoms], axis=0)
+            bottoms = tf.unstack(bottom, axis=0)
+            output = tf.stack([_inner_max_pool(bott) for bott in bottoms], axis=0)
 
             return output
 
@@ -118,8 +138,8 @@ class RcnVgg16:
                 relu = tf.nn.relu(bias)
                 return relu
 
-            bottoms = tf.unpack(bottom, axis=0)
-            output = tf.pack([_inner_conv(bott) for bott in bottoms], axis=0)
+            bottoms = tf.unstack(bottom, axis=0)
+            output = tf.stack([_inner_conv(bott) for bott in bottoms], axis=0)
 
             return output
 
