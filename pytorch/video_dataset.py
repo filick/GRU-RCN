@@ -1,3 +1,4 @@
+import torch
 import torch.utils.data as data
 from torchvision import transforms
 
@@ -97,7 +98,7 @@ class VideoDataset(data.Dataset):
         else:
             samples = [v[i] for i in self.sample_index]
         
-        images_per_video = np.stack(samples)
+        images_per_video = torch.stack(samples)
                 
         return images_per_video
     
@@ -115,12 +116,13 @@ if __name__ == "__main__":
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    transformed_dataset = VideoDataset(videolist = trainlist, num_frames=4, transform=None)           
+    transformed_dataset = VideoDataset(videolist = trainlist, num_frames=4, transform=data_transforms)           
     dataloader = data.DataLoader(transformed_dataset, batch_size=2, shuffle=False, num_workers=2)    
     print(len(dataloader))
     
     
     img_batch, labels = next(iter(dataloader))
+    print(type(img_batch))
     print(img_batch.shape)
     print(labels.shape)
 
