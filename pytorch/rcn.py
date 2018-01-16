@@ -19,7 +19,7 @@ class GRURCNCellBase(nn.Module):
         if self._count == 0:
             temp = self._xz(x)
             self.hidden = Variable(torch.zeros(temp.size()))
-            self._count += 1
+            self._count = 1
         
         #print(self.hidden.size())
         z = torch.sigmoid(self._xz(x) + self._hz(self.hidden))
@@ -27,6 +27,9 @@ class GRURCNCellBase(nn.Module):
         h_ = torch.tanh(self._xh(x) + self._rh(r * self.hidden))
         self.hidden = (1 - z) * self.hidden + z * h_
         return self.hidden
+    
+    def reset(self):
+        self._count = 0
 
 
 class ConvGRURCNCell(nn.Module):
@@ -83,6 +86,9 @@ class ConvGRURCNCell(nn.Module):
 
         hidden = self._cell(x)
         return hidden
+    
+    def reset(self):
+        self._cell.reset()
 
 
 class BottleneckGRURCNCell(nn.Module):
@@ -127,7 +133,9 @@ class BottleneckGRURCNCell(nn.Module):
 
     def forward(self, x):
         return self._cell(x)
-
+    
+    def reset(self):
+        self._cell.reset()
 
 class Bottleneck(nn.Module):
 

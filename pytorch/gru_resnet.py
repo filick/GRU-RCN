@@ -17,11 +17,15 @@ class Gru_ResNet(nn.Module):
         
         self.add_ConvGRURCNCell(ConvGRULayers)
         self.add_BottleneckGRURCNCell(BottleneckGRULayers)
+        
+        self.ConvGRULayers = ConvGRULayers
+        self.BottleneckGRULayers = BottleneckGRULayers
 
     def forward(self, inputs):
         """
         inputs: num_frames x batch_size x channel x height x weight
         """
+        
         for i in range(inputs.size(0)):
             x = self.base_model.conv1(inputs[i,:,:,:,:])
             x = self.base_model.bn1(x)
@@ -34,11 +38,35 @@ class Gru_ResNet(nn.Module):
             x = self.base_model.layer4(x)
     
             x = self.base_model.avgpool(x)
-            
+                        
         x = x.view(x.size(0), -1)
         x = self.fc(x)
+        
+        self.reset_count()
         return x
     
+    def reset_count(self):
+        for key in self.ConvGRULayers.keys():
+            item = self.ConvGRULayers[key]
+            
+            if key is 'none':
+                self.base_model._modules['conv1'].reset()
+            else:
+                for inner_list in item:
+                    self.base_model._modules[key]._modules[inner_list[0]] \
+                        ._modules[inner_list[1]].reset()
+                        
+        for key in self.BottleneckGRULayers.keys():
+            item = self.BottleneckGRULayers[key]
+            
+            if key is 'none':
+                self.base_model._modules['conv1'].reset()
+            else:
+                for inner_list in item:
+                    self.base_model._modules[key]._modules[inner_list[0]] \
+                        ._modules[inner_list[1]].reset()
+    
+
     def add_ConvGRURCNCell(self, layers):
         if isinstance(layers,dict):
             for key in layers.keys():
