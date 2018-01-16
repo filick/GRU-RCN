@@ -46,25 +46,23 @@ class Gru_ResNet(nn.Module):
         return x
     
     def reset_count(self):
-        for key in self.ConvGRULayers.keys():
-            item = self.ConvGRULayers[key]
+        if isinstance(self.ConvGRULayers,dict):
+            for key in self.ConvGRULayers.keys():
+                item = self.ConvGRULayers[key]
+                
+                if key is 'none':
+                    self.base_model._modules['conv1'].reset()
+                else:
+                    for inner_list in item:
+                        self.base_model._modules[key]._modules[inner_list[0]] \
+                            ._modules[inner_list[1]].reset()
+        
+        if isinstance(self.BottleneckGRULayers,dict):            
+            for key in self.BottleneckGRULayers.keys():
+                item = self.BottleneckGRULayers[key]
             
-            if key is 'none':
-                self.base_model._modules['conv1'].reset()
-            else:
-                for inner_list in item:
-                    self.base_model._modules[key]._modules[inner_list[0]] \
-                        ._modules[inner_list[1]].reset()
-                        
-        for key in self.BottleneckGRULayers.keys():
-            item = self.BottleneckGRULayers[key]
-            
-            if key is 'none':
-                self.base_model._modules['conv1'].reset()
-            else:
-                for inner_list in item:
-                    self.base_model._modules[key]._modules[inner_list[0]] \
-                        ._modules[inner_list[1]].reset()
+                for inner in item:
+                    self.base_model._modules[key]._modules[inner].reset()
     
 
     def add_ConvGRURCNCell(self, layers):
@@ -98,26 +96,15 @@ class Gru_ResNet(nn.Module):
             
     def add_BottleneckGRURCNCell(self, layers):
         if isinstance(layers,dict):
-            for key in layers.keys():
-                item = layers[key]
-                if key != 'none' and len(item[0]) != 2:
-                    raise ValueError("Check GRULayers setting")
-                
-                if key is 'none':
-                    current = self.base_model._modules['conv1']
-                    self.base_model._modules['conv1'] = rcn.BottleneckGRURCNCell(
-                                            channels = current.out_channels, 
-                                            x_channels = current.in_channels,
-                                            x_stride = current.stride)
-                else:
-                    for inner_list in item:
-                        current = self.base_model._modules[key]._modules[inner_list[0]] \
-                            ._modules[inner_list[1]]
-                        self.base_model._modules[key]._modules[inner_list[0]] \
-                            ._modules[inner_list[1]] = rcn.BottleneckGRURCNCell(
-                                            channels = current.out_channels, 
-                                            x_channels = current.in_channels,
-                                            x_stride = current.stride)
+            pass
+#            for key in layers.keys():
+#                item = layers[key]
+#                for inner in item:
+#                    current = self.base_model._modules[key]._modules[inner]
+#                    self.base_model._modules[key]._modules[inner] = rcn.BottleneckGRURCNCell(
+#                                        channels = current.out_channels, 
+#                                        x_channels = current.in_channels,
+#                                        x_stride = current.stride)
 
 def gru_resnet(base_model, ConvGRULayers, BottleneckGRULayers, num_classes):
     
@@ -140,9 +127,9 @@ if __name__ == "__main__":
                    'layer1': [
                            ['0','conv1'], ['2','conv2']
                            ]}
-    BottleneckGRULayers={'layer1': [
-                           ['0','conv2'], ['2','conv1']
-                           ]}
+    BottleneckGRULayers=None #{'layer1': ['0', '2'],
+                         #'layer4': ['0']
+                        #   }
     gru_resnet50 = gru_resnet(torchvision.models.resnet.resnet50(pretrained=True), 
                               ConvGRULayers, 
                               BottleneckGRULayers, 
