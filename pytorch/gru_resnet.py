@@ -54,8 +54,12 @@ class Gru_ResNet(nn.Module):
                     self.base_model._modules['conv1'].reset()
                 else:
                     for inner_list in item:
-                        self.base_model._modules[key]._modules[inner_list[0]] \
-                            ._modules[inner_list[1]].reset()
+                        if inner_list[1] is 'downsample':
+                            self.base_model._modules[key]._modules[inner_list[0]] \
+                                ._modules[inner_list[1]]._modules['0'].reset()
+                        else:
+                            self.base_model._modules[key]._modules[inner_list[0]] \
+                                ._modules[inner_list[1]].reset()                            
         
         if isinstance(self.BottleneckGRULayers,dict):            
             for key in self.BottleneckGRULayers.keys():
@@ -83,28 +87,39 @@ class Gru_ResNet(nn.Module):
                                             x_padding = current.padding)
                 else:
                     for inner_list in item:
-                        current = self.base_model._modules[key]._modules[inner_list[0]] \
-                            ._modules[inner_list[1]]
-                        self.base_model._modules[key]._modules[inner_list[0]] \
-                            ._modules[inner_list[1]] = rcn.ConvGRURCNCell(
-                                            channels = current.out_channels, 
-                                            kernel_size = current.kernel_size, # may be any number you like
-                                            x_channels = current.in_channels,
-                                            x_kernel_size = current.kernel_size, 
-                                            x_stride = current.stride, 
-                                            x_padding = current.padding)
+                        if inner_list[1] is 'downsample':
+                            current = self.base_model._modules[key]._modules[inner_list[0]] \
+                                    ._modules[inner_list[1]]._modules['0']
+                            self.base_model._modules[key]._modules[inner_list[0]] \
+                                ._modules[inner_list[1]]._modules['0'] = rcn.ConvGRURCNCell(
+                                                channels = current.out_channels, 
+                                                kernel_size = current.kernel_size, # may be any number you like
+                                                x_channels = current.in_channels,
+                                                x_kernel_size = current.kernel_size, 
+                                                x_stride = current.stride, 
+                                                x_padding = current.padding)                            
+                        else:
+                            current = self.base_model._modules[key]._modules[inner_list[0]] \
+                                    ._modules[inner_list[1]]
+                            self.base_model._modules[key]._modules[inner_list[0]] \
+                                ._modules[inner_list[1]] = rcn.ConvGRURCNCell(
+                                                channels = current.out_channels, 
+                                                kernel_size = current.kernel_size, # may be any number you like
+                                                x_channels = current.in_channels,
+                                                x_kernel_size = current.kernel_size, 
+                                                x_stride = current.stride, 
+                                                x_padding = current.padding)
             
     def add_BottleneckGRURCNCell(self, layers):
         if isinstance(layers,dict):
-            pass
-#            for key in layers.keys():
-#                item = layers[key]
-#                for inner in item:
-#                    current = self.base_model._modules[key]._modules[inner]
-#                    self.base_model._modules[key]._modules[inner] = rcn.BottleneckGRURCNCell(
-#                                        channels = current.out_channels, 
-#                                        x_channels = current.in_channels,
-#                                        x_stride = current.stride)
+            for key in layers.keys():
+                item = layers[key]
+                for inner in item:
+                    current = self.base_model._modules[key]._modules[inner]
+                    self.base_model._modules[key]._modules[inner] = rcn.BottleneckGRURCNCell(
+                                        channels = current._modules['conv3'].out_channels, 
+                                        x_channels = current._modules['conv1'].in_channels,
+                                        x_stride = current._modules['conv2'].stride)
 
 def gru_resnet(base_model, ConvGRULayers, BottleneckGRULayers, num_classes):
     
@@ -125,11 +140,11 @@ if __name__ == "__main__":
     
     ConvGRULayers={'none': ['conv1'], 
                    'layer1': [
-                           ['0','conv1'], ['2','conv2']
+                           ['0','conv1'], ['2','conv2'], ['0', 'downsample']
                            ]}
-    BottleneckGRULayers=None #{'layer1': ['0', '2'],
-                         #'layer4': ['0']
-                        #   }
+    BottleneckGRULayers={'layer2': ['1','2'],
+                         'layer4': ['0','2']
+                        }
     gru_resnet50 = gru_resnet(torchvision.models.resnet.resnet50(pretrained=True), 
                               ConvGRULayers, 
                               BottleneckGRULayers, 

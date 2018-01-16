@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import math
 
 class GRURCNCellBase(nn.Module):
 
@@ -14,6 +15,15 @@ class GRURCNCellBase(nn.Module):
         self._rh = rh
         
         self._count = 0
+        
+        for m in self.modules():
+            print (m)
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
 
     def forward(self, x):
         if self._count == 0:
@@ -70,7 +80,7 @@ class ConvGRURCNCell(nn.Module):
         x_channels = x_channels or channels
         x_kernel_size = x_kernel_size or kernel_size
         x_stride = x_stride or 1
-        x_padding = x_padding or ((kernel_size - 1) // 2)
+        x_padding = x_padding or ((kernel_size[0] - 1) // 2)
 
         hz = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size[0] - 1) // 2)
         hr = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size[0] - 1) // 2)
@@ -130,12 +140,23 @@ class BottleneckGRURCNCell(nn.Module):
         xh = Bottleneck(x_channels, channels, stride=x_stride)
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
+        
+        self.downsample = x_channels != channels
+        if self.downsample:
+            self.downsample_ConvGRURCNCell = ConvGRURCNCell(channels=channels, kernel_size=(1,1), x_channels=x_channels,
+                 x_kernel_size=(1,1), x_stride=x_stride, x_padding=0)
 
     def forward(self, x):
-        return self._cell(x)
+        residual = x
+        if self.downsample:
+            residual = self.downsample_ConvGRURCNCell(x)
+            
+        return residual + self._cell(x)
     
     def reset(self):
         self._cell.reset()
+        if self.downsample:
+            self.downsample_ConvGRURCNCell.reset()
 
 class Bottleneck(nn.Module):
 
@@ -165,17 +186,17 @@ class Bottleneck(nn.Module):
 # test
 if __name__ == '__main__':
     gru_rcn = BottleneckGRURCNCell(64)
-    print(gru_rcn)
-
-    from torch.autograd import Variable
-    x = Variable(torch.rand(10, 64, 32, 32))
-    h = Variable(torch.rand(10, 64, 32, 32))
-    gru_rcn(x, h)
-
-    gru_rcn = BottleneckGRURCNCell(64, 32, 2)
-    print(gru_rcn)
-
-    from torch.autograd import Variable
-    x = Variable(torch.rand(10, 32, 64, 64))
-    h = Variable(torch.rand(10, 64, 32, 32))
-    gru_rcn(x, h)
+#    print(gru_rcn)
+#
+#    from torch.autograd import Variable
+#    x = Variable(torch.rand(10, 64, 32, 32))
+#    h = Variable(torch.rand(10, 64, 32, 32))
+#    gru_rcn(x, h)
+#
+#    gru_rcn = BottleneckGRURCNCell(64, 32, 2)
+#    print(gru_rcn)
+#
+#    from torch.autograd import Variable
+#    x = Variable(torch.rand(10, 32, 64, 64))
+#    h = Variable(torch.rand(10, 64, 32, 32))
+#    gru_rcn(x, h)
