@@ -69,10 +69,27 @@ class Gru_ResNet(nn.Module):
                                             x_padding = current.padding)
             
     def add_BottleneckGRURCNCell(self, layers):
-        if layers is None:
-            pass
-        else:
-            raise NotImplementedError("Currently not support BottleneckGRURCNCell")
+        if isinstance(layers,dict):
+            for key in layers.keys():
+                item = layers[key]
+                if key != 'none' and len(item[0]) != 2:
+                    raise ValueError("Check GRULayers setting")
+                
+                if key is 'none':
+                    current = self.base_model._modules['conv1']
+                    self.base_model._modules['conv1'] = rcn.BottleneckGRURCNCell(
+                                            channels = current.out_channels, 
+                                            x_channels = current.in_channels,
+                                            x_stride = current.stride)
+                else:
+                    for inner_list in item:
+                        current = self.base_model._modules[key]._modules[inner_list[0]] \
+                            ._modules[inner_list[1]]
+                        self.base_model._modules[key]._modules[inner_list[0]] \
+                            ._modules[inner_list[1]] = rcn.BottleneckGRURCNCell(
+                                            channels = current.out_channels, 
+                                            x_channels = current.in_channels,
+                                            x_stride = current.stride)
 
 def gru_resnet(base_model, ConvGRULayers, BottleneckGRULayers, num_classes):
     
@@ -95,7 +112,9 @@ if __name__ == "__main__":
                    'layer1': [
                            ['0','conv1'], ['2','conv2']
                            ]}
-    BottleneckGRULayers=None
+    BottleneckGRULayers={'layer1': [
+                           ['0','conv2'], ['2','conv1']
+                           ]}
     gru_resnet50 = gru_resnet(torchvision.models.resnet.resnet50(pretrained=True), 
                               ConvGRULayers, 
                               BottleneckGRULayers, 

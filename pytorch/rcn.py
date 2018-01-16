@@ -125,8 +125,8 @@ class BottleneckGRURCNCell(nn.Module):
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
 
-    def forward(self, x, hidden):
-        return self._cell(x, hidden)
+    def forward(self, x):
+        return self._cell(x)
 
 
 class Bottleneck(nn.Module):
