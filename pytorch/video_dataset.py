@@ -40,7 +40,7 @@ class TrainTestSplit(object):
 class VideoDataset(data.Dataset):
     """
         _getitem__: 4D Tensor
-            in shape "num_frames x height x weight x channel".
+            in shape "num_frames x channel x height x weight "
     """
     
     def __init__(self, root= 'data/UCF-101/', 
@@ -80,7 +80,8 @@ class VideoDataset(data.Dataset):
         
         return:
             images_per_video: 4D ndarray
-              in shape "num_frames x height x weight x channel".
+              in shape "num_frames x height x weight x channel",
+              or 4D tensor in shape "num_frames x channel x height x weight ".
     
         Note:
             Now we assume num_frames is the same for all the videos, and image sequence

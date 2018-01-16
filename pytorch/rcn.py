@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from torch.autograd import Variable
 
 class GRURCNCellBase(nn.Module):
 
@@ -12,13 +12,21 @@ class GRURCNCellBase(nn.Module):
         self._hr = hr
         self._xh = xh
         self._rh = rh
+        
+        self._count = 0
 
-    def forward(self, x, hidden):
-        z = torch.sigmoid(self._xz(x) + self._hz(hidden))
-        r = torch.sigmoid(self._xr(x) + self._hr(hidden))
-        h_ = torch.tanh(self._xh(x) + self._rh(r * hidden))
-        h = (1 - z) * hidden + z * h_
-        return h
+    def forward(self, x):
+        if self._count == 0:
+            temp = self._xz(x)
+            self.hidden = Variable(torch.zeros(temp.size()))
+            self._count += 1
+        
+        #print(self.hidden.size())
+        z = torch.sigmoid(self._xz(x) + self._hz(self.hidden))
+        r = torch.sigmoid(self._xr(x) + self._hr(self.hidden))
+        h_ = torch.tanh(self._xh(x) + self._rh(r * self.hidden))
+        self.hidden = (1 - z) * self.hidden + z * h_
+        return self.hidden
 
 
 class ConvGRURCNCell(nn.Module):
@@ -61,18 +69,20 @@ class ConvGRURCNCell(nn.Module):
         x_stride = x_stride or 1
         x_padding = x_padding or ((kernel_size - 1) // 2)
 
-        hz = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
-        hr = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
-        rh = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
+        hz = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size[0] - 1) // 2)
+        hr = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size[0] - 1) // 2)
+        rh = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size[0] - 1) // 2)
 
         xz = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
         xr = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
         xh = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
+                
+    def forward(self, x):
 
-    def forward(self, x, hidden):
-        return self._cell(x, hidden)
+        hidden = self._cell(x)
+        return hidden
 
 
 class BottleneckGRURCNCell(nn.Module):
