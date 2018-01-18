@@ -80,15 +80,15 @@ class ModifiedRCNCell(RCNCell):
         self._rcn_cells = []
 
     def modify(self, key_seq, rcn_cell):
+        unit = self._model
         if isinstance(key_seq, (list, tuple)):
-            unit = self._model
             for key in key_seq[:-1]:
                 unit = unit._modules[key]
             key = key_seq[-1]
         else:
             key = key_seq
         new_unit = _Wrapper(rcn_cell)
-        unit[key] = new_unit
+        unit._modules[key] = new_unit
         self._rcn_cells.append(new_unit)
 
     def forward(self, x, hidden):
@@ -113,11 +113,15 @@ class GRURCNCellBase(RCNCell):
         self._rh = rh
 
     def forward(self, x, hidden):
-        z = torch.sigmoid(self._xz(x) + self._hz(hidden))
-        r = torch.sigmoid(self._xr(x) + self._hr(hidden))
-        h_ = torch.tanh(self._xh(x) + self._rh(r * hidden))
-        h = (1 - z) * hidden + z * h_
-        return h, h
+        if hidden == None:
+            h = torch.sigmoid(self._xz(x)) * torch.tanh(self._xh(x))
+            return h, h
+        else:
+            z = torch.sigmoid(self._xz(x) + self._hz(hidden))
+            r = torch.sigmoid(self._xr(x) + self._hr(hidden))
+            h_ = torch.tanh(self._xh(x) + self._rh(r * hidden))
+            h = (1 - z) * hidden + z * h_
+            return h, h
 
 
 class ConvGRURCNCell(RCNCell):
@@ -224,13 +228,13 @@ class Bottleneck(nn.Module):
     def __init__(self, in_channels, out_channels, expansion=4, stride=1, batch_norm=True):
         super(Bottleneck, self).__init__()
         planes = out_channels // expansion
-        self.conv1 = nn.Conv2d(in_channels, planes, kernel_size=1)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, planes, kernel_size=1, bias=not batch_norm)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=not batch_norm)
         self.conv3 = nn.Conv2d(planes, out_channels, kernel_size=1)
         if batch_norm:
             self.bn1 = nn.BatchNorm2d(planes)
             self.bn2 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU()
+        self.relu = nn.ReLU(inplace=True)
         self.batch_norm = batch_norm
 
     def forward(self, x):
