@@ -27,7 +27,7 @@ base_model = vgg11_bn(pretrained=False)
 modify_layers = [1, 4, 7]
 model = VGGGRU(base_model, modify_layers, 101)
 if use_multi_gpu:
-    model = nn.DataParallel(model)
+    model._rcn = nn.DataParallel(model._rcn, dim=1)
 
 
 # data loader
@@ -49,7 +49,7 @@ weight_decay = 0
 lr = 0.01
 momentum = 0.9
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters, lr=lr, weight_decay=weight_decay, momentum=momentum)
+optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
 lr_scheduler = lrs.ReduceLROnPlateau(optimizer, mode='min', factor=0.5)
 
 
@@ -77,7 +77,7 @@ for epoch in range(epochs):
     for i, (inp, target) in enumerate(dataloader):
         data_time.update(time.time() - end)
         if use_gpu:
-            inp = inp.cuda()
+            inp = inp.cuda(async=True)
             target = target.cuda(async=True)
         input_var = torch.autograd.Variable(inp.permute(1,0,2,3,4), volatile=(mode != 'train'))
         target_var = torch.autograd.Variable(target, volatile=(mode != 'train'))

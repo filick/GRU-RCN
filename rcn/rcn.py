@@ -8,7 +8,21 @@ __all__ = ['RCN', 'RCNCell', 'StackedRCNCell', 'ModifiedRCNCell',
 
 
 class RCN(nn.Module):
+    r"""Convolutional RNN
+    
+    Args: cell
+        - **cell**: instance of RCNCell.
 
+    Inputs: x, h0
+        - **x** (seq, batch, channel, height, width): tensor containing input features.
+        - **h0** (batch, channel, height, width): tensor containing the initial hidden
+        state to feed the cell.
+
+    Outputs: output, h
+        - **output** (seq, batch, channel, height, width): tensor cantaining output of 
+        all time instances
+        - **h**: (batch, hidden_size): tensor containing the current hidden state
+    """
     def __init__(self, cell):
         super(RCN, self).__init__()
         if not isinstance(cell, RCNCell):
@@ -25,7 +39,18 @@ class RCN(nn.Module):
 
 
 class RCNCell(nn.Module):
-    
+    r"""abstract class for rcn cells. All rcn cells inheriting this class must
+    implement the forward fuction.
+
+    Inputs: x, hidden
+        - **x** (batch, channel, height, width): tensor containing input features.
+        - **hidden**: tensor or list of tensors that containing the hidden
+            state for the precious time instance.
+
+    Outputs: output, h
+        - **output**: same as h
+        - **h**: tensor or list of tensors containing the next hidden state
+    """
     def forward(self, x, hidden):
         raise NotImplementedError("function forward(self, x, hidden) \
         is not implemented")
@@ -65,8 +90,6 @@ class _Wrapper(nn.Module):
         self.hidden = None
 
     def forward(self, x):
-        if self.hidden is None:
-            raise RuntimeError('hidden state has not been set yet')
         out, hidden = self._cell(x, self.hidden)
         self.hidden = hidden
         return out
@@ -113,7 +136,7 @@ class GRURCNCellBase(RCNCell):
         self._rh = rh
 
     def forward(self, x, hidden):
-        if hidden == None:
+        if hidden is None:
             h = torch.sigmoid(self._xz(x)) * torch.tanh(self._xh(x))
             return h, h
         else:
@@ -153,7 +176,8 @@ class ConvGRURCNCell(RCNCell):
 
     Outputs: output, h
         - **output**: same as h
-        - **h**: (batch, hidden_size): tensor containing the next hidden state
+        - **h**: (batch, batch, channel, height, width): tensor containing the next 
+        hidden state
     """
 
     def __init__(self, channels, kernel_size, x_channels=None,
@@ -199,8 +223,10 @@ class BottleneckGRURCNCell(RCNCell):
         - **hidden** (batch, channel, height, width): tensor containing the hidden
             state for the precious time instance.
 
-    Outputs: h
-        - **h**: (batch, hidden_size): tensor containing the next hidden state
+    Outputs: output, h
+        - **output**: same as h
+        - **h**: (batch, batch, channel, height, width): tensor containing the next 
+        hidden state
     """
 
     def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, batch_norm=True):

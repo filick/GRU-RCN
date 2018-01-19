@@ -57,5 +57,6 @@ class VGGGRU(nn.Module):
         h0 = [None,] * self._n_modified
         out, _ = self._rcn(x, h0)
         out = out[-1, :]
+        out = out.view(out.size(0), -1)
         out = self._classifier(out)
         return out
