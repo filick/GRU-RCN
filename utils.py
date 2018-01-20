@@ -1,3 +1,7 @@
+import torch
+import shutil
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -29,3 +33,9 @@ def accuracy(output, target, topk=(1,)):
         correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
+
+
+def save_checkpoint(last_path, best_path, state, is_best):
+    torch.save(state, last_path)
+    if is_best:
+        shutil.copyfile(last_path, best_path)

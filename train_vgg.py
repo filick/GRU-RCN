@@ -16,15 +16,18 @@ import time
 use_gpu = torch.cuda.is_available()
 use_multi_gpu = torch.cuda.device_count() > 1
 mode = 'train'
-batch_size = 1
-seq_len = 5
+batch_size = 50
+seq_len = 8
 epochs = 60
 print_freq = 10
+try_resume = True
+latest_check = 'checkpoint/vgg11bn47_latest.pth.tar'
+best_check = 'checkpoint/vgg11bn47_best.pth.tar'
 
 
 # model
 base_model = vgg11_bn(pretrained=False)
-modify_layers = [1, 4, 7]
+modify_layers = [4, 7]
 model = VGGGRU(base_model, modify_layers, 101)
 if use_multi_gpu:
     model._rcn = nn.DataParallel(model._rcn, dim=1)
@@ -41,16 +44,32 @@ data_trans = transforms.Compose([
 dataset = UCF101Folder('/Users/filick/projects/video/data/UCF-101',
                        '/Users/filick/projects/video/data/ucfTrainTestlist',
                        mode, selector, transform=data_trans)
-dataloader = DataLoader(dataset, batch_size, True, num_workers=2, pin_memory=use_gpu)
+dataloader = DataLoader(dataset, batch_size, True, num_workers=8, pin_memory=use_gpu)
 
 
 # optimizer
 weight_decay = 0
-lr = 0.01
+lr = 0.001
 momentum = 0.9
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
 lr_scheduler = lrs.ReduceLROnPlateau(optimizer, mode='min', factor=0.5)
+
+
+# resume
+
+if try_resume:
+    if os.path.isfile(latest_check):
+        print("=> loading checkpoint '{}'".format(latest_check))
+        checkpoint = torch.load(latest_check)
+        start_epoch = checkpoint['epoch']
+        best_prec1 = checkpoint['best_prec1']
+        model.load_state_dict(checkpoint['state_dict'])
+        print("=> loaded checkpoint '{}' (epoch {})"
+                .format(latest_check, checkpoint['epoch']))
+    else:
+        print("=> no checkpoint found at '{}'".format(latest_check))
+
 
 
 # Train
@@ -79,10 +98,11 @@ for epoch in range(epochs):
         if use_gpu:
             inp = inp.cuda(async=True)
             target = target.cuda(async=True)
-        input_var = torch.autograd.Variable(inp.permute(1,0,2,3,4), volatile=(mode != 'train'))
-        target_var = torch.autograd.Variable(target, volatile=(mode != 'train'))
+        input_var = torch.autograd.Variable(inp.permute(1,0,2,3,4), volatile=(mode!='train'))
+        target_var = torch.autograd.Variable(target, volatile=(mode!='train'))
 
         # compute output
+        optimizer.zero_grad()
         output = model(input_var)
         loss = criterion(output, target_var)
 
@@ -92,8 +112,8 @@ for epoch in range(epochs):
         top1.update(prec1[0], inp.size(0))
         top3.update(prec3[0], inp.size(0))
 
-        optimizer.zero_grad()
         loss.backward()
+        optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -112,4 +132,14 @@ for epoch in range(epochs):
     print(' * Prec@1 {top1.avg:.3f} Prec@3 {top3.avg:.3f}'
             .format(top1=top1, top3=top3))
 
-    lr_scheduler.step(loss.avg)
+    lr_scheduler.step(losses.avg)
+
+    # remember best prec@1 and save checkpoint
+    is_best = prec1 > best_prec1
+    best_prec1 = max(prec1, best_prec1)
+    save_checkpoint(latest_check, best_check,
+                    {
+                        'epoch': epoch + 1,
+                        'state_dict': model.state_dict(),
+                        'best_prec1': best_prec1,
+                    }, is_best)
