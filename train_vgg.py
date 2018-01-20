@@ -94,6 +94,7 @@ for epoch in range(epochs):
 
         optimizer.zero_grad()
         loss.backward()
+        optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
