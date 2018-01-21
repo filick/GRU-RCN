@@ -229,7 +229,7 @@ class BottleneckGRURCNCell(RCNCell):
         hidden state
     """
 
-    def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, batch_norm=True):
+    def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, batch_norm=True, residual=False):
         super(BottleneckGRURCNCell, self).__init__()
 
         x_channels = x_channels or channels
@@ -245,8 +245,24 @@ class BottleneckGRURCNCell(RCNCell):
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
 
+        self._residual = residual
+        self._downsample = None
+        if residual and (channels != x_channels):
+            bn = nn.BatchNorm2d(channels)
+            bn.weight.data.fill_(1)
+            self._downsample = nn.Sequential(
+                nn.Conv2d(x_channels, channels, kernel_size=1, stride=x_stride, bias=False),
+                bn
+            )
+
     def forward(self, x, hidden):
-        return self._cell(x, hidden)
+        out, h = self._cell(x, hidden)
+        if self._residual:
+            residual = x
+            if self._downsample:
+                residual = self._downsample(x)
+            out = nn.functional.relu(out + residual, inplace=True)
+        return out, h
 
 
 class Bottleneck(nn.Module):
@@ -260,6 +276,8 @@ class Bottleneck(nn.Module):
         if batch_norm:
             self.bn1 = nn.BatchNorm2d(planes)
             self.bn2 = nn.BatchNorm2d(planes)
+            self.bn1.weight.data.fill_(1)
+            self.bn2.weight.data.fill_(1)
         self.relu = nn.ReLU(inplace=True)
         self.batch_norm = batch_norm
 

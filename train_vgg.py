@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 from data import UCF101Folder, FixedFrameSelector
 from utils import *
 import time
+import os
 
 
 # gloabl setting
@@ -57,7 +58,8 @@ lr_scheduler = lrs.ReduceLROnPlateau(optimizer, mode='min', factor=0.5)
 
 
 # resume
-
+best_prec1 = 0
+start_epoch = 0
 if try_resume:
     if os.path.isfile(latest_check):
         print("=> loading checkpoint '{}'".format(latest_check))
@@ -79,7 +81,7 @@ if use_gpu:
     model = model.cuda()
     criterion = criterion.cuda()
 
-for epoch in range(epochs):
+for epoch in range(start_epoch, epochs):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -135,8 +137,8 @@ for epoch in range(epochs):
     lr_scheduler.step(losses.avg)
 
     # remember best prec@1 and save checkpoint
-    is_best = prec1 > best_prec1
-    best_prec1 = max(prec1, best_prec1)
+    is_best = prec1[0] > best_prec1
+    best_prec1 = max(prec1[0], best_prec1)
     save_checkpoint(latest_check, best_check,
                     {
                         'epoch': epoch + 1,
