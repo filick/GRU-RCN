@@ -17,7 +17,7 @@ def vgg_gru_cell(vgg_model, layer_idx, new_cells, keep_classifier=True):
         cell = ModifiedRCNCell(vgg_model)
     else:
         cell = ModifiedRCNCell(vgg_model.features)
-    
+
     i = 0
     for key in vgg_model.features._modules.keys():
         layer = vgg_model.features._modules[key]
@@ -43,11 +43,9 @@ class VGGGRU(nn.Module):
 
     def __init__(self, model, modify_layers, n_classes):
         super(VGGGRU, self).__init__()
-        self._base_model = model
         self._n_modified = len(modify_layers)
-        self._rcn_cell = vgg_gru_cell(model, modify_layers, ['bottleneck'] * self._n_modified, 
-                                      keep_classifier=False)
-        self._rcn = RCN(self._rcn_cell)
+        self._rcn = RCN(vgg_gru_cell(model, modify_layers, ['bottleneck'] * self._n_modified, 
+                                     keep_classifier=False))
         self._classifier = model.classifier
         in_features = self._classifier._modules['6'].in_features
         if self._classifier._modules['6'].out_features != n_classes:
@@ -55,8 +53,7 @@ class VGGGRU(nn.Module):
 
     def forward(self, x):
         h0 = [None,] * self._n_modified
-        out, _ = self._rcn(x, h0)
-        out = out[-1, :]
+        out, _ = self._rcn(x, h0, seq_output=False)
         out = out.view(out.size(0), -1)
         out = self._classifier(out)
         return out

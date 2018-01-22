@@ -14,12 +14,12 @@ class RCN(nn.Module):
         - **cell**: instance of RCNCell.
 
     Inputs: x, h0
-        - **x** (seq, batch, channel, height, width): tensor containing input features.
+        - **x** (batch, seq, channel, height, width): tensor containing input features.
         - **h0** (batch, channel, height, width): tensor containing the initial hidden
         state to feed the cell.
 
     Outputs: output, h
-        - **output** (seq, batch, channel, height, width): tensor cantaining output of 
+        - **output** (batch, seq, channel, height, width): tensor cantaining output of 
         all time instances
         - **h**: (batch, hidden_size): tensor containing the current hidden state
     """
@@ -29,13 +29,17 @@ class RCN(nn.Module):
             raise ValueError('cell must be an instance of RCNCell')
         self._cell = cell
 
-    def forward(self, x, h0):
-        out, h = self._cell(x[0, :], h0)
+    def forward(self, x, h0, seq_output=True):
+        out, h = self._cell(x[:, 0, :], h0)
         out_seq = [out, ]
-        for t in range(1, x.size(0)):
-            out, h = self._cell(x[0, :], h)
+        for t in range(1, x.size(1)):
+            out, h = self._cell(x[:, t, :], h)
             out_seq.append(out)
-        return torch.stack(out_seq), h
+        if seq_output:
+            out = torch.stack(out_seq, dim=1)
+        else:
+            del out_seq
+        return out, h
 
 
 class RCNCell(nn.Module):
@@ -229,7 +233,8 @@ class BottleneckGRURCNCell(RCNCell):
         hidden state
     """
 
-    def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, batch_norm=True, residual=False):
+    def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, 
+                 batch_norm=True, residual=False, downsample=None):
         super(BottleneckGRURCNCell, self).__init__()
 
         x_channels = x_channels or channels
@@ -246,8 +251,8 @@ class BottleneckGRURCNCell(RCNCell):
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
 
         self._residual = residual
-        self._downsample = None
-        if residual and (channels != x_channels):
+        self._downsample = downsample
+        if residual and ((channels != x_channels) or (x_stride != 1)) and (downsample is None):
             bn = nn.BatchNorm2d(channels)
             bn.weight.data.fill_(1)
             self._downsample = nn.Sequential(

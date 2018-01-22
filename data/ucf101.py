@@ -44,17 +44,17 @@ def default_loader(path, frame_selector, transform=None):
 
 class UCF101Folder(Dataset):
 
-    def __init__(self, data_root, split_root, mode, frame_selector,
+    def __init__(self, data_root, split_root, mode, frame_selector, split=0,
                  transform=None, target_transform=None, loader=default_loader):
         classes = [line.split(' ')[1].strip() for line in open(os.path.join(split_root, 'classInd.txt'), 'r')]
         class_to_idx = {classes[i] : i for i in range(len(classes))}
 
         imgs = []
-        for part in ['01', '02', '03']:
-            for line in open(os.path.join(split_root, mode + 'list' + part + '.txt'), 'r'):
-                l = line.strip().split(' ')[0].split('/')
-                path = os.path.join(data_root, *l)
-                imgs.append((path, class_to_idx[l[0]]))
+        part = ['01', '02', '03'][split - 1]
+        for line in open(os.path.join(split_root, mode + 'list' + part + '.txt'), 'r'):
+            l = line.strip().split(' ')[0].split('/')
+            path = os.path.join(data_root, *l)
+            imgs.append((path, class_to_idx[l[0]]))
 
         self.data_root = data_root
         self.split_root = split_root

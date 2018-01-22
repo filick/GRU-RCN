@@ -12,7 +12,6 @@ def resnet_gru_cell(res_model, layer_idx, new_cells):
     if len(layer_idx) != len(new_cells):
         raise ValueError("the legth of layer_idx does not match the lenth of new_cells")
 
-
     cell = ModifiedRCNCell(res_model)
     for ilayer, new_cell in zip(layer_idx, new_cells):
         if ilayer == 0:
@@ -34,10 +33,10 @@ def resnet_gru_cell(res_model, layer_idx, new_cells):
             if new_cell == 'bottleneck':
                 if isinstance(layer, res.Bottleneck):
                     new_cell = BottleneckGRURCNCell(layer.conv3.out_channels, layer.conv1.in_channels,
-                                                    x_stride=layer.conv2.stride, residual=True)
+                                                    x_stride=layer.conv2.stride, residual=True, downsample=layer.downsample)
                 else:
                     new_cell = BottleneckGRURCNCell(layer.conv2.out_channels, layer.conv1.in_channels,
-                                                    x_stride=layer.conv1.stride, residual=True)
+                                                    x_stride=layer.conv1.stride, residual=True, downsample=layer.downsample)
             if not isinstance(new_cell, RCNCell):
                 raise ValueError("not an RCNCell")
             cell.modify(['layer%d'%(id1), str(id2)], new_cell)
@@ -55,8 +54,7 @@ class ResnetGRU(nn.Module):
 
     def forward(self, x):
         h0 = [None,] * self._n_modified
-        out, _ = self._rcn(x, h0)
-        out = out[-1, :]
+        out, _ = self._rcn(x, h0, seq_output=False)
         return out
 
 

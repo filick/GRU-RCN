@@ -4,8 +4,8 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as lrs
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from rcn.vgg import VGGGRU
-from torchvision.models.vgg import *
+from rcn.resnet import ResnetGRU
+from torchvision.models.resnet import *
 import torchvision.transforms as transforms
 from data import UCF101Folder, FixedFrameSelector
 from utils import *
@@ -22,14 +22,15 @@ seq_len = 8
 epochs = 60
 print_freq = 10
 try_resume = True
-latest_check = 'checkpoint/vgg11bn47_latest.pth.tar'
-best_check = 'checkpoint/vgg11bn47_best.pth.tar'
+half_tensor = True
+latest_check = 'checkpoint/resnet50_latest.pth.tar'
+best_check = 'checkpoint/resnet50_best.pth.tar'
 
 
 # model
-base_model = vgg11_bn(pretrained=False)
-modify_layers = [4, 7]
-model = VGGGRU(base_model, modify_layers, 101)
+base_model = resnet50(pretrained=True)
+modify_layers = [(1, 0), (2, 0), (3, 0), (4, 0)]
+model = ResnetGRU(base_model, modify_layers, 101)
 if use_multi_gpu:
     model = nn.DataParallel(model)
 
@@ -46,7 +47,7 @@ train_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
                              '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
                              'train', selector, transform=data_trans)
 train_loader = DataLoader(train_dataset, batch_size, True, num_workers=8, pin_memory=use_gpu)
-test_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
+test_dataset = UCF101Folder('/home/member/fuwang/data/~UCF101/UCF-101',
                             '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
                             'test', selector, transform=data_trans)
 test_loader = DataLoader(test_dataset, batch_size, False, num_workers=8, pin_memory=use_gpu)
@@ -83,6 +84,8 @@ if try_resume:
 
 
 # OK， let's begin
+if half_tensor:
+    model = model.half()
 if use_gpu:
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
@@ -109,6 +112,8 @@ for epoch in repeats:
         end = time.time()
         for i, (inp, target) in enumerate(train_loader):
             data_time.update(time.time() - end)
+            if half_tensor:
+                inp = inp.half()
             if use_gpu:
                 inp = inp.cuda(async=True)
                 target = target.cuda(async=True)
@@ -116,8 +121,10 @@ for epoch in repeats:
             target_var = torch.autograd.Variable(target, volatile=False)
 
             # compute output
+            print(input_var.size())
             optimizer.zero_grad()
             output = model(input_var)
+            print(output.size())
             loss = criterion(output, target_var)
 
             # measure accuracy and record loss
@@ -158,6 +165,8 @@ for epoch in repeats:
     end = time.time()
     for i, (inp, target) in enumerate(test_loader):
         data_time.update(time.time() - end)
+        if half_tensor:
+            inp = inp.half()
         if use_gpu:
             inp = inp.cuda(async=True)
             target = target.cuda(async=True)
