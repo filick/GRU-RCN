@@ -17,6 +17,10 @@ class RCN(nn.Module):
         - **x** (batch, seq, channel, height, width): tensor containing input features.
         - **h0** (batch, channel, height, width): tensor containing the initial hidden
         state to feed the cell.
+        - **output** (one in ['last', 'all', 'average']): string that determines the 
+        output mode. If 'last', only return the output at the last time instance; 
+        if 'all', return outputs at all time instances in a large tensor; if 'average', 
+        average outputs along time axis then return. Default; 'last'
 
     Outputs: output, h
         - **output** (batch, seq, channel, height, width): tensor cantaining output of 
@@ -29,17 +33,20 @@ class RCN(nn.Module):
             raise ValueError('cell must be an instance of RCNCell')
         self._cell = cell
 
-    def forward(self, x, h0, seq_output=True):
+    def forward(self, x, h0, output='last'):
         out, h = self._cell(x[:, 0, :], h0)
         out_seq = [out, ]
         for t in range(1, x.size(1)):
             out, h = self._cell(x[:, t, :], h)
             out_seq.append(out)
-        if seq_output:
-            out = torch.stack(out_seq, dim=1)
+        if output == 'last':
+            return out_seq[-1], h
+        elif output == 'all':
+            return torch.stack(out_seq, dim=1), h
+        elif output == 'average':
+            return torch.mean(torch.stack(out_seq), dim=0), h
         else:
-            del out_seq
-        return out, h
+            raise ValueError("output mode can only be one in ['last', 'all', 'average']")
 
 
 class RCNCell(nn.Module):

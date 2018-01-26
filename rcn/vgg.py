@@ -41,11 +41,16 @@ def vgg_gru_cell(vgg_model, layer_idx, new_cells, keep_classifier=True):
 
 class VGGGRU(nn.Module):
 
-    def __init__(self, model, modify_layers, n_classes):
+    def __init__(self, model, modify_layers, n_classes, only_last=False, dropout=0):
         super(VGGGRU, self).__init__()
         self._n_modified = len(modify_layers)
+        self._outputmode = 'last' if only_last else 'average'
         self._rcn = RCN(vgg_gru_cell(model, modify_layers, ['bottleneck'] * self._n_modified, 
                                      keep_classifier=False))
+        self.dropout = None
+        if dropout != 0:
+            self.dropout = nn.Dropout(p=dropout)
+        
         self._classifier = model.classifier
         in_features = self._classifier._modules['6'].in_features
         if self._classifier._modules['6'].out_features != n_classes:
@@ -53,7 +58,9 @@ class VGGGRU(nn.Module):
 
     def forward(self, x):
         h0 = [None,] * self._n_modified
-        out, _ = self._rcn(x, h0, seq_output=False)
+        out, _ = self._rcn(x, h0, output=self._outputmode)
         out = out.view(out.size(0), -1)
+        if self.dropout:
+            out = self.dropout(out)
         out = self._classifier(out)
         return out

@@ -2,36 +2,25 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 import os
+import random
+import math
 from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader as Video
 
 
-__all__ = ['FrameSelector', 'FixedFrameSelector', 'default_loader', 'UCF101Folder']
+__all__ = ['default_loader', 'UCF101Folder']
 
 
-class FrameSelector(object):
-
-    def select(self, length, fps):
-        raise NotImplementedError("function select not implemented")
-
-
-class FixedFrameSelector(FrameSelector):
-
-    def __init__(self, nframes):
-        super(FixedFrameSelector, self).__init__()
-        self._nframes = nframes
-
-    def select(self, length, fps):
-        step = np.floor(length / self._nframes)
-        start = np.random.randint(length - (self._nframes - 1) * step)
-        selected = [i * step + start for i in range(self._nframes)]
-        return selected
-
+def _same_transform(img, trans, state):
+    random.setstate(state)
+    return trans(img)
 
 def default_loader(path, frame_selector, transform=None):
     video = Video(path)
     frames = frame_selector.select(video.nframes, video.fps)
     if transform:
-        data = [transform(video.get_frame(f / video.fps)) for f in frames]
+        state = random.getstate()
+        data = [_same_transform((video.get_frame(f / video.fps)), transform, state) for f in frames]
+        random.seed(None)
     else:
         data = [video.get_frame(f / video.fps) for f in frames]
     if isinstance(data[0], np.ndarray):
