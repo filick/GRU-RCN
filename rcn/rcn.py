@@ -3,6 +3,7 @@ import torch.nn as nn
 
 
 __all__ = ['RCN', 'RCNCell', 'StackedRCNCell', 'ModifiedRCNCell',
+           'VanillaRCNCellBase', 'BottleneckRCNCell',
            'GRURCNCellBase', 'ConvGRURCNCell', 'BottleneckGRURCNCell', 
            'Bottleneck']
 
@@ -76,13 +77,15 @@ class StackedRCNCell(RCNCell):
         self._isrcn = [False, ] * len(cells)
         for i in indices_of_rcn:
             self._isrcn[i] = True
-        self._cells = cells
+        for idx, cell in enumerate(cells):
+            self.add_module(str(idx), cell)
+        self._num_rcns = sum(self._isrcn)
 
     def forward(self, x, hidden):
-        if len(hidden) != len(self._ircn):
+        if len(hidden) != self._num_rcns:
             raise ValueError("The seq_len of hidden states does not match the number of RCNCells")
         h = []
-        for cell, isrcn in zip(self._cells, self._isrcn):
+        for cell, isrcn in zip(self._modules.values(), self._isrcn):
             if isrcn:
                 x, _h = cell(x, hidden[len(h)])
                 h.append(_h)
@@ -133,6 +136,68 @@ class ModifiedRCNCell(RCNCell):
         x = self._model(x)
         new_h = [cell.hidden for cell in self._rcn_cells]
         return x, new_h
+
+
+class VanillaRCNCellBase(RCNCell):
+
+    def __init__(self, xh, hh, relu=True):
+        super(VanillaRCNCellBase, self).__init__()
+        self._xh = xh
+        self._hh = hh
+        if relu:
+            self._activate = nn.ReLU(inplace=True)
+        else:
+            self._activate = nn.Tanh()
+
+    def forward(self, x, hidden):
+        h = None
+        if hidden is None:
+            h = self._activate(self._xh(x))
+        else:
+            h = self._activate(self._xh(x) + self._hh(hidden))
+        return h, h
+
+
+class BottleneckRCNCell(RCNCell):
+
+    def __init__(self, channels, x_channels=None, expansion=4, x_stride=None, 
+                 batch_norm=False, residual=False, downsample=None):
+        super(BottleneckRCNCell, self).__init__()
+
+        x_channels = x_channels or channels
+        x_stride = x_stride or 1
+
+        hh = Bottleneck(channels, channels, expansion=expansion)
+        xh = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride)
+        if batch_norm:
+            bn = nn.BatchNorm2d(channels)
+            bn.weight.data.fill_(1)
+            hh = nn.Sequential(hh, bn)
+            bn = nn.BatchNorm2d(channels)
+            bn.weight.data.fill_(1)
+            xh = nn.Sequential(xh, bn)
+
+        self._cell = VanillaRCNCellBase(xh, hh)
+
+        self._residual = residual
+        self._downsample = downsample
+        if residual and ((channels != x_channels) or (x_stride != 1)) and (downsample is None):
+            conv = nn.Conv2d(x_channels, channels, kernel_size=1, stride=x_stride, bias=False)
+            if batch_norm:
+                bn = nn.BatchNorm2d(channels)
+                bn.weight.data.fill_(1)
+                self._downsample = nn.Sequential(conv, bn)
+            else:
+                self._downsample = conv
+
+    def forward(self, x, hidden):
+        out, h = self._cell(x, hidden)
+        if self._residual:
+            residual = x
+            if self._downsample:
+                residual = self._downsample(x)
+            out = out + residual
+        return out, h
 
 
 class GRURCNCellBase(RCNCell):

@@ -19,21 +19,21 @@ import os
 use_gpu = torch.cuda.is_available()
 use_multi_gpu = torch.cuda.device_count() > 1
 mode = 'train'
-batch_size = 50
-test_batch_size = 5
-test_each_epochs = 5
+batch_size = 210
+test_batch_size = 21
+test_each_epochs = 10
 seq_len = 5
-epochs = 60
+epochs = 100
 print_freq = 10
 try_resume = True
-latest_check = 'checkpoint/vgg11bn47_latest.pth.tar'
-best_check = 'checkpoint/vgg11bn47_best.pth.tar'
+latest_check = 'checkpoint/vgg11_357_latest.pth.tar'
+best_check = 'checkpoint/vgg11_357_best.pth.tar'
 
 
 # model
-base_model = vgg11(pretrained=False)
-modify_layers = [4, 7]
-model = VGGGRU(base_model, modify_layers, 101, only_last=False, dropout=0.9)
+base_model = vgg11(pretrained=True)
+modify_layers = [3,5,7]
+model = VGGGRU(base_model, modify_layers, 101, only_last=False, dropout=0.5)
 if use_multi_gpu:
     model = nn.DataParallel(model)
 
@@ -67,7 +67,7 @@ train_traintrans = transforms.Compose([
 test_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
                             '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
                             'test', test_selector, transform=train_traintrans)
-test_loader = DataLoader(test_dataset, batch_size, False, num_workers=8, pin_memory=use_gpu)
+test_loader = DataLoader(test_dataset, test_batch_size, False, num_workers=8, pin_memory=use_gpu)
 
 
 # optimizer
@@ -78,6 +78,14 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
 #lr_scheduler = lrs.ReduceLROnPlateau(optimizer, mode='min', factor=0.5)
 lr_scheduler = lrs.LambdaLR(optimizer, lambda epoch: 0.1 ** (epoch // 20))
+
+
+# to cuda
+if use_gpu:
+    import torch.backends.cudnn as cudnn
+    cudnn.benchmark = True
+    model = model.cuda()
+    criterion = criterion.cuda()
 
 
 # resume
@@ -105,12 +113,6 @@ if try_resume:
 
 
 # OK， let's begin
-if use_gpu:
-    import torch.backends.cudnn as cudnn
-    cudnn.benchmark = True
-    model = model.cuda()
-    criterion = criterion.cuda()
-
 repeats = None
 if mode == 'train':
     repeats = range(start_epoch, epochs)
@@ -187,7 +189,8 @@ for epoch in repeats:
                 inp = inp.cuda(async=True)
                 target = target.cuda(async=True)
             bs, seqs, ncrops, c, h, w = inp.size()
-            input_var = torch.autograd.Variable(inp.permute(0, 2, 1, 3, 4, 5), volatile=True)
+            inp = inp.permute(0, 2, 1, 3, 4, 5).contiguous()
+            input_var = torch.autograd.Variable(inp, volatile=True)
             target_var = torch.autograd.Variable(target, volatile=True)
 
             output = model(input_var.view(-1, seqs, c, h, w))
