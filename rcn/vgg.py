@@ -13,6 +13,11 @@ def vgg_gru_cell(vgg_model, layer_idx, new_cells, keep_classifier=True):
     if len(layer_idx) != len(new_cells):
         raise ValueError("the legth of layer_idx does not match the lenth of new_cells")
 
+    use_bn = False
+    for layer in vgg_model.features:
+        if isinstance(layer, nn.BatchNorm2d):
+            use_bn = True
+            break
     i, j = 0, 0
     sequence = []
     while j < len(vgg_model.features):
@@ -20,11 +25,11 @@ def vgg_gru_cell(vgg_model, layer_idx, new_cells, keep_classifier=True):
         if isinstance(layer, nn.Conv2d) and i in layer_idx:
             new_cell = new_cells[layer_idx.index(i)]
             if new_cell == 'conv':
-                new_cell = ConvGRURCNCell(layer.out_channels, layer.kernel_size, layer.in_channels)
+                new_cell = ConvGRURCNCell(layer.out_channels, layer.kernel_size, layer.in_channels, batch_norm=use_bn)
             elif new_cell == 'bottleneck':
-                new_cell = BottleneckGRURCNCell(layer.out_channels, layer.in_channels, batch_norm=False)
+                new_cell = BottleneckGRURCNCell(layer.out_channels, layer.in_channels, batch_norm=use_bn)
             elif new_cell == 'vanilla':
-                new_cell = BottleneckRCNCell(layer.out_channels, layer.in_channels, batch_norm=False)
+                new_cell = BottleneckRCNCell(layer.out_channels, layer.in_channels, batch_norm=use_bn)
             if not isinstance(new_cell, RCNCell):
                 raise ValueError("not an RCNCell")
             sequence.append(new_cell)
@@ -65,14 +70,21 @@ class VGGGRU(nn.Module):
             self._classifier._modules['6'] = nn.Linear(in_features, n_classes)
             self._fc_changed = True
 
-    def modified_parameters(self):
-        params = []
+    def group_params(self):
+        modified = []
+        unmodified = []
         for layer in self._cell._modules.values():
             if isinstance(layer, RCNCell):
-                params.append(layer.parameters())
+                modified.append(layer.parameters())
+            else:
+                unmodified.append(layer.parameters())
         if self._fc_changed:
-            params.append(self._classifier._modules['6'].parameters())
-        return chain(*params)
+            modified.append(self._classifier._modules['6'].parameters())
+            unmodified.append(self._classifier._modules['0'].parameters())
+            unmodified.append(self._classifier._modules['3'].parameters())
+        else:
+            unmodified.append(self._classifier.parameters())
+        return chain(*modified), chain(*unmodified)
 
     def forward(self, x):
         h0 = [None,] * self._n_modified

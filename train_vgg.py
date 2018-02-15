@@ -19,13 +19,12 @@ import os
 use_gpu = torch.cuda.is_available()
 use_multi_gpu = torch.cuda.device_count() > 1
 mode = 'train'
-batch_size = 210
+batch_size = 175
 test_batch_size = 21
-test_each_epochs = 10
 seq_len = 5
 epochs = 100
 print_freq = 10
-try_resume = True
+try_resume = False
 latest_check = 'checkpoint/vgg11_357_latest.pth.tar'
 best_check = 'checkpoint/vgg11_357_best.pth.tar'
 
@@ -53,20 +52,27 @@ train_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
                              'train', train_selector, transform=train_traintrans)
 train_loader = DataLoader(train_dataset, batch_size, True, num_workers=8, pin_memory=use_gpu)
 
+test_selector = TSNSelector(seq_len, random=False)
 trans_crop = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
-test_selector = TSNSelector(seq_len, random=False)
-train_traintrans = transforms.Compose([
+if mode == 'test':
+    test_traintrans = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.TenCrop(224),
+            transforms.Lambda(lambda crops: torch.stack([trans_crop(crop) for crop in crops]))
+        ])
+else:
+    test_traintrans = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.ColorJitter(),
-        transforms.TenCrop(224),
-        transforms.Lambda(lambda crops: torch.stack([trans_crop(crop) for crop in crops]))
+        transforms.CenterCrop(224),
+        trans_crop
     ])
 test_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
                             '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
-                            'test', test_selector, transform=train_traintrans)
+                            'test', test_selector, transform=test_traintrans)
+test_bs = test_batch_size if mode == 'test' else batch_size
 test_loader = DataLoader(test_dataset, test_batch_size, False, num_workers=8, pin_memory=use_gpu)
 
 
@@ -75,9 +81,18 @@ weight_decay = 0
 lr = 0.001
 momentum = 0.9
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
+if use_gpu:
+    pretrained, modified = model.module.group_params()
+else:
+    pretrained, modified = model.group_params()
+optimizer = optim.SGD(
+    [
+        {'params': pretrained},
+        {'params': modified, 'lr': lr * 10 }
+    ], lr=lr, weight_decay=weight_decay, momentum=momentum)
 #lr_scheduler = lrs.ReduceLROnPlateau(optimizer, mode='min', factor=0.5)
-lr_scheduler = lrs.LambdaLR(optimizer, lambda epoch: 0.1 ** (epoch // 20))
+lr_scheduler = lrs.LambdaLR(optimizer, [lambda epoch: 0.1 ** (epoch // 20), 
+                                        lambda epoch: 0.1 ** (epoch // 20) if epochs < 40 else 0.1 ** (epoch // 20 + 1)])
 
 
 # to cuda
@@ -175,19 +190,19 @@ for epoch in repeats:
         #lr_scheduler.step(losses.avg)
 
     # test
-    if (mode == 'test') or ((epoch + 1) % test_each_epochs == 0):
-        batch_time = AverageMeter()
-        data_time = AverageMeter()
-        top1 = AverageMeter()
-        top3 = AverageMeter()
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    top1 = AverageMeter()
+    top3 = AverageMeter()
 
-        model.eval()
-        end = time.time()
-        for i, (inp, target) in enumerate(test_loader):
-            data_time.update(time.time() - end)
-            if use_gpu:
-                inp = inp.cuda(async=True)
-                target = target.cuda(async=True)
+    model.eval()
+    end = time.time()
+    for i, (inp, target) in enumerate(test_loader):
+        data_time.update(time.time() - end)
+        if use_gpu:
+            inp = inp.cuda(async=True)
+            target = target.cuda(async=True)
+        if mode == 'test':
             bs, seqs, ncrops, c, h, w = inp.size()
             inp = inp.permute(0, 2, 1, 3, 4, 5).contiguous()
             input_var = torch.autograd.Variable(inp, volatile=True)
@@ -195,27 +210,31 @@ for epoch in repeats:
 
             output = model(input_var.view(-1, seqs, c, h, w))
             output = output.view(bs, ncrops, -1).mean(1)
+        else:
+            input_var = torch.autograd.Variable(inp, volatile=True)
+            target_var = torch.autograd.Variable(target, volatile=True)
+            output = model(input_var)
 
-            # measure accuracy and record loss
-            prec1, prec3 = accuracy(output.data, target, topk=(1, 3))
-            top1.update(prec1[0], inp.size(0))
-            top3.update(prec3[0], inp.size(0))
+        # measure accuracy and record loss
+        prec1, prec3 = accuracy(output.data, target, topk=(1, 3))
+        top1.update(prec1[0], inp.size(0))
+        top3.update(prec3[0], inp.size(0))
 
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
-            if mode == 'test' and i % print_freq == 0:
-                print('Epoch: [{0}/{1}]\t'
-                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                        'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                        'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                        'Prec@3 {top3.val:.3f} ({top3.avg:.3f})'.format(
-                        i, len(test_loader), batch_time=batch_time,
-                        data_time=data_time, top1=top1, top3=top3))
+        if mode == 'test' and i % print_freq == 0:
+            print('Epoch: [{0}/{1}]\t'
+                    'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                    'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                    'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                    'Prec@3 {top3.val:.3f} ({top3.avg:.3f})'.format(
+                    i, len(test_loader), batch_time=batch_time,
+                    data_time=data_time, top1=top1, top3=top3))
 
-        print(' * Prec@1 {top1.avg:.3f} Prec@3 {top3.avg:.3f}'
-                .format(top1=top1, top3=top3))
+    print(' * Prec@1 {top1.avg:.3f} Prec@3 {top3.avg:.3f}'
+            .format(top1=top1, top3=top3))
 
     # remember best prec@1 and save checkpoint
     if mode == 'train':

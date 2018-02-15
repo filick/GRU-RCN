@@ -33,7 +33,7 @@ def default_loader(path, frame_selector, transform=None):
 
 class UCF101Folder(Dataset):
 
-    def __init__(self, data_root, split_root, mode, frame_selector, split=0,
+    def __init__(self, data_root, split_root, mode, frame_selector, split=1,
                  transform=None, target_transform=None, loader=default_loader):
         classes = [line.split(' ')[1].strip() for line in open(os.path.join(split_root, 'classInd.txt'), 'r')]
         class_to_idx = {classes[i] : i for i in range(len(classes))}

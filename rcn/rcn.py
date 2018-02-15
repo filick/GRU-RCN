@@ -167,28 +167,15 @@ class BottleneckRCNCell(RCNCell):
         x_channels = x_channels or channels
         x_stride = x_stride or 1
 
-        hh = Bottleneck(channels, channels, expansion=expansion)
-        xh = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride)
-        if batch_norm:
-            bn = nn.BatchNorm2d(channels)
-            bn.weight.data.fill_(1)
-            hh = nn.Sequential(hh, bn)
-            bn = nn.BatchNorm2d(channels)
-            bn.weight.data.fill_(1)
-            xh = nn.Sequential(xh, bn)
+        hh = Bottleneck(channels, channels, expansion=expansion, batch_norm=batch_norm)
+        xh = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride, batch_norm=batch_norm)
 
         self._cell = VanillaRCNCellBase(xh, hh)
 
         self._residual = residual
         self._downsample = downsample
         if residual and ((channels != x_channels) or (x_stride != 1)) and (downsample is None):
-            conv = nn.Conv2d(x_channels, channels, kernel_size=1, stride=x_stride, bias=False)
-            if batch_norm:
-                bn = nn.BatchNorm2d(channels)
-                bn.weight.data.fill_(1)
-                self._downsample = nn.Sequential(conv, bn)
-            else:
-                self._downsample = conv
+            self._downsample = Conv2dAndBN(batch_norm, x_channels, channels, kernel_size=1, stride=x_stride, bias=not batch_norm)
 
     def forward(self, x, hidden):
         out, h = self._cell(x, hidden)
@@ -244,6 +231,7 @@ class ConvGRURCNCell(RCNCell):
             parameters of the convolution operation on inputs.
             If None, inputs and hidden states have the same sizes, so the
             convolutions on them have no difference.
+        - **batch_norm**: (bool) whether use batch norm or not
 
     Inputs: x (input), hidden
         - **x** (batch, channel, height, width): tensor containing input features.
@@ -257,7 +245,7 @@ class ConvGRURCNCell(RCNCell):
     """
 
     def __init__(self, channels, kernel_size, x_channels=None,
-                 x_kernel_size=None, x_stride=None, x_padding=None):
+                 x_kernel_size=None, x_stride=None, x_padding=None, batch_norm=False):
         super(ConvGRURCNCell, self).__init__()
 
         x_channels = x_channels or channels
@@ -265,13 +253,13 @@ class ConvGRURCNCell(RCNCell):
         x_stride = x_stride or 1
         x_padding = x_padding or ((kernel_size - 1) // 2)
 
-        hz = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
-        hr = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
-        rh = nn.Conv2d(channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
+        hz = Conv2dAndBN(batch_norm, channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
+        hr = Conv2dAndBN(batch_norm, channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
+        rh = Conv2dAndBN(batch_norm, channels, channels, kernel_size, padding=(kernel_size - 1) // 2)
 
-        xz = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
-        xr = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
-        xh = nn.Conv2d(x_channels, channels, x_kernel_size, x_stride, x_padding)
+        xz = Conv2dAndBN(batch_norm, x_channels, channels, x_kernel_size, x_stride, x_padding)
+        xr = Conv2dAndBN(batch_norm, x_channels, channels, x_kernel_size, x_stride, x_padding)
+        xh = Conv2dAndBN(batch_norm, x_channels, channels, x_kernel_size, x_stride, x_padding)
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
 
@@ -312,25 +300,20 @@ class BottleneckGRURCNCell(RCNCell):
         x_channels = x_channels or channels
         x_stride = x_stride or 1
 
-        hz = Bottleneck(channels, channels, expansion=expansion)
-        hr = Bottleneck(channels, channels, expansion=expansion)
-        rh = Bottleneck(channels, channels, expansion=expansion)
+        hz = Bottleneck(channels, channels, expansion=expansion, batch_norm=batch_norm)
+        hr = Bottleneck(channels, channels, expansion=expansion, batch_norm=batch_norm)
+        rh = Bottleneck(channels, channels, expansion=expansion, batch_norm=batch_norm)
 
-        xz = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride)
-        xr = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride)
-        xh = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride)
+        xz = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride, batch_norm=batch_norm)
+        xr = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride, batch_norm=batch_norm)
+        xh = Bottleneck(x_channels, channels, expansion=expansion, stride=x_stride, batch_norm=batch_norm)
 
         self._cell = GRURCNCellBase(xz, hz, xr, hr, xh, rh)
 
         self._residual = residual
         self._downsample = downsample
         if residual and ((channels != x_channels) or (x_stride != 1)) and (downsample is None):
-            bn = nn.BatchNorm2d(channels)
-            bn.weight.data.fill_(1)
-            self._downsample = nn.Sequential(
-                nn.Conv2d(x_channels, channels, kernel_size=1, stride=x_stride, bias=False),
-                bn
-            )
+            self._downsample = Conv2dAndBN(batch_norm, x_channels, channels, kernel_size=1, stride=x_stride, bias=False)
 
     def forward(self, x, hidden):
         out, h = self._cell(x, hidden)
@@ -338,8 +321,18 @@ class BottleneckGRURCNCell(RCNCell):
             residual = x
             if self._downsample:
                 residual = self._downsample(x)
-            out = nn.functional.relu(out + residual, inplace=True)
+            out = out + residual
         return out, h
+
+
+def Conv2dAndBN(use_bn, *param_list, **param_dict):
+    conv = nn.Conv2d(*param_list, bias=not use_bn, **param_dict)
+    if not use_bn:
+        return conv
+    else:
+        bn = nn.BatchNorm2d(conv.out_channels)
+        bn.weight.data.fill_(1)
+        return nn.Sequential(conv, bn)
 
 
 class Bottleneck(nn.Module):
@@ -347,28 +340,16 @@ class Bottleneck(nn.Module):
     def __init__(self, in_channels, out_channels, expansion=4, stride=1, batch_norm=True):
         super(Bottleneck, self).__init__()
         planes = out_channels // expansion
-        self.conv1 = nn.Conv2d(in_channels, planes, kernel_size=1, bias=not batch_norm)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=not batch_norm)
-        self.conv3 = nn.Conv2d(planes, out_channels, kernel_size=1)
-        if batch_norm:
-            self.bn1 = nn.BatchNorm2d(planes)
-            self.bn2 = nn.BatchNorm2d(planes)
-            self.bn1.weight.data.fill_(1)
-            self.bn2.weight.data.fill_(1)
+        self.conv1 = Conv2dAndBN(batch_norm, in_channels, planes, kernel_size=1)
+        self.conv2 = Conv2dAndBN(batch_norm, planes, planes, kernel_size=3, stride=stride, padding=1)
+        self.conv3 = Conv2dAndBN(batch_norm, planes, out_channels, kernel_size=1)
         self.relu = nn.ReLU(inplace=True)
-        self.batch_norm = batch_norm
 
     def forward(self, x):
         out = self.conv1(x)
-        if self.batch_norm:
-            out = self.bn1(out)
         out = self.relu(out)
-
         out = self.conv2(out)
-        if self.batch_norm:
-            out = self.bn2(out)
         out = self.relu(out)
-
         out = self.conv3(out)
         return out
 

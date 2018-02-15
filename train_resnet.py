@@ -7,7 +7,9 @@ from torch.utils.data import DataLoader
 from rcn.resnet import ResnetGRU
 from torchvision.models.resnet import *
 import torchvision.transforms as transforms
-from data import UCF101Folder, FixedFrameSelector
+from data import UCF101Folder
+from data.selector import *
+from data.transforms import ScaleJittering
 from utils import *
 import time
 import os
@@ -37,15 +39,17 @@ if use_multi_gpu:
 
 # data loader
 selector = FixedFrameSelector(seq_len)
-data_trans = transforms.Compose([
+traintrans = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.CenterCrop(224),
+        transforms.ColorJitter(),
+        ScaleJittering(224),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 train_dataset = UCF101Folder('/home/member/fuwang/data/UCF101/UCF-101',
                              '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
-                             'train', selector, transform=data_trans)
+                             'train', selector, transform=traintrans)
 train_loader = DataLoader(train_dataset, batch_size, True, num_workers=8, pin_memory=use_gpu)
 test_dataset = UCF101Folder('/home/member/fuwang/data/~UCF101/UCF-101',
                             '/home/member/fuwang/data/UCF101/ucfTrainTestlist',
